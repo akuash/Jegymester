@@ -12,10 +12,11 @@ class Screening(db.Model):
     place: Mapped[str] = mapped_column(String(30), nullable=False)
 
     movie_id: Mapped[int] = mapped_column(ForeignKey("movies.id"), nullable=False)
+    hall_id: Mapped[int] = mapped_column(ForeignKey("hall.id"), nullable=False)
 
     movie: Mapped["Movie"] = relationship(back_populates="screenings", lazy=True)
+    hall: Mapped["Hall"] = relationship(back_populates="screenings", lazy=True)
     tickets: Mapped[List["Ticket"]] = relationship(back_populates="screening", lazy=True)
 
     def __repr__(self) -> str:
         return f"Screening(id={self.id!r}, place={self.place!r}, time={self.time!r})"
-    

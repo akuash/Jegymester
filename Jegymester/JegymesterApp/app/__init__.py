@@ -15,7 +15,7 @@ def create_app(config_class=Config):
     migrate = Migrate(app, db, render_as_batch=True)
     
     # Register blueprints here
-    from app.main import bp as main_bp
-    app.register_blueprint(main_bp)
+    from app.blueprints import bp as main_bp
+    app.register_blueprint(main_bp,url_prefix='/api')
 
     return app

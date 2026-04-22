@@ -9,6 +9,9 @@ from app.blueprints.hall.schemas import (
 )
 from app.blueprints.hall.service import HallService
 
+@bp.route('/')
+def index():
+    return 'Hall blueprint'
 
 @bp.get("/")
 @bp.output(HallResponseSchema(many=True), 200)
@@ -38,7 +41,7 @@ def create_hall(json_data):
     raise HTTPError(status_code=400, message=response)
 
 
-@bp.patch("/<int:hall_id>")
+@bp.put("/<int:hall_id>")
 @bp.input(HallUpdateSchema)
 @bp.output(HallResponseSchema, 200)
 def update_hall(hall_id: int, json_data):

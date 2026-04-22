@@ -11,11 +11,6 @@ from app.blueprints.screening.schemas import (
 from app.blueprints.screening.service import ScreeningService
 
 
-@bp.route("/")
-def index():
-    return "Screening blueprint"
-
-
 @bp.get("/")
 @bp.output(ScreeningDetailsSchema(many=True), 200)
 def get_screenings():

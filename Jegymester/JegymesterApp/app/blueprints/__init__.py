@@ -9,6 +9,9 @@ def index():
 from app.blueprints.user import bp as user_bp
 bp.register_blueprint(user_bp, url_prefix='/user')
 
+from app.blueprints.screening import bp as screening_bp
+bp.register_blueprint(screening_bp, url_prefix='/screening')
+
 from app.blueprints.hall import bp as hall_bp
 bp.register_blueprint(hall_bp, url_prefix='/hall')
 

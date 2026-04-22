@@ -45,12 +45,14 @@ class ScreeningService:
 
             screening = Screening(
                 time=data["time"],
+                place=data["place"],
                 movie=movie,
-                hall=hall,
+                hall=hall
             )
 
             db.session.add(screening)
             db.session.commit()
+            db.session.refresh(screening)
 
             return True, screening
 
@@ -69,6 +71,9 @@ class ScreeningService:
             if "time" in data:
                 screening.time = data["time"]
 
+            if "place" in data:
+                screening.place = data["place"]
+
             if "movie_id" in data:
                 movie = db.session.get(Movie, data["movie_id"])
                 if movie is None:
@@ -82,6 +87,7 @@ class ScreeningService:
                 screening.hall = hall
 
             db.session.commit()
+            db.session.refresh(screening)
 
             return True, screening
 

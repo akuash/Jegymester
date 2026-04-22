@@ -28,7 +28,7 @@ class ScreeningService:
         ).scalar_one_or_none()
 
         if screening is None:
-            return False, "Nincs ilyen vetítés"
+            return False, "Nincs ilyen vetites"
 
         return True, screening
 
@@ -56,7 +56,7 @@ class ScreeningService:
 
         except Exception as ex:
             db.session.rollback()
-            return False, f"Hiba a vetítés létrehozásakor: {ex}"
+            return False, f"Hiba a vetites letrehozasakor: {ex}"
 
     @staticmethod
     def update(screening_id: int, data):
@@ -64,7 +64,7 @@ class ScreeningService:
             screening = db.session.get(Screening, screening_id)
 
             if screening is None:
-                return False, "Nincs ilyen vetítés"
+                return False, "Nincs ilyen vetites"
 
             if "time" in data:
                 screening.time = data["time"]
@@ -87,7 +87,7 @@ class ScreeningService:
 
         except Exception as ex:
             db.session.rollback()
-            return False, f"Hiba a vetítés módosításakor: {ex}"
+            return False, f"Hiba a vetites modositasakor: {ex}"
 
     @staticmethod
     def delete(screening_id: int):
@@ -95,7 +95,7 @@ class ScreeningService:
             screening = db.session.get(Screening, screening_id)
 
             if screening is None:
-                return False, "Nincs ilyen vetítés"
+                return False, "Nincs ilyen vetites"
 
             db.session.execute(
                 delete(Ticket).where(Ticket.screening_id == screening_id)
@@ -104,8 +104,8 @@ class ScreeningService:
             db.session.delete(screening)
             db.session.commit()
 
-            return True, {"message": "Vetítés és a hozzá tartozó jegyek törölve"}
+            return True, {"message": "Vetites es a hozza tartozo jegyek torolve"}
 
         except Exception as ex:
             db.session.rollback()
-            return False, f"Hiba a vetítés törlésekor: {ex}"
+            return False, f"Hiba a vetites torlesekor: {ex}"

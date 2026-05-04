@@ -1,8 +1,12 @@
 from sqlalchemy import select
 from app.extensions import db
-from app.blueprints.user.shemas import UserRequestSchema, UserLoginRequestSchema, UserResponseSchema
+from app.blueprints.user.shemas import PayLoadSchema, RoleSchema, UserRequestSchema, UserLoginRequestSchema, UserResponseSchema
 from app.models.user import User
 from app.models.role import Role
+
+from datetime import datetime, timedelta
+from authlib.jose import jwt
+from flask import current_app
 
 class UserService:
     @staticmethod
@@ -47,6 +51,19 @@ class UserService:
                 return False, "Incorrect E-mail"
             if not user.check_password(request["password"]):
                 return False, "Incorrect password"
-            return True, UserResponseSchema().dump(user)
+            user_schema = UserResponseSchema().dump(user)
+            user_schema["token"] = UserService.token_generate(user)
+            return True, user_schema
         except Exception as ex:
             return False, str(ex)
+
+    @staticmethod
+    def token_generate(user: User):
+        payload = PayLoadSchema()
+        payload.exp = int((datetime.now() + timedelta(hours=1)).timestamp())
+        payload.user_id = user.id
+        payload.role = user.role
+        return jwt.encode({ "alg" : "RS256" },
+                          PayLoadSchema().dump(payload),
+                          current_app.config["SECRET_KEY"]
+                          )

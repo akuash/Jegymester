@@ -6,3 +6,5 @@ class Base(DeclarativeBase):
 
 db = SQLAlchemy(model_class=Base)
 
+from apiflask import HTTPTokenAuth
+auth = HTTPTokenAuth()

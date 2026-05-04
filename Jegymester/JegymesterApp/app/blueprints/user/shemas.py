@@ -19,7 +19,13 @@ class UserResponseSchema(Schema):
     email  = fields.String(validate=Email())
     phone = fields.String()
     role = fields.Nested(RoleSchema)
+    token = fields.String()
 
 class UserLoginRequestSchema(Schema):
     email = fields.String(validate=Email())
     password = fields.String()
+
+class PayLoadSchema(Schema):
+    user_id = fields.Integer()
+    role = fields.String()
+    exp = fields.Integer()

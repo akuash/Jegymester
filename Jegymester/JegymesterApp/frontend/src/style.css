@@ -10,6 +10,8 @@
 
 body {
   margin: 0;
+  min-height: 100vh;
+  background: #f5f7fb;
 }
 
 button,
@@ -65,7 +67,7 @@ button:disabled {
 }
 
 .login-card {
-  width: min(520px, 100%);
+  width: min(560px, 100%);
   padding: 28px;
 }
 
@@ -84,15 +86,25 @@ button:disabled {
 .resource-tabs,
 nav,
 .actions,
-.form-actions {
+.form-actions,
+.demo-users {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
 .tabs,
-.resource-tabs {
+.resource-tabs,
+.demo-users {
   margin: 18px 0;
+}
+
+.demo-users {
+  align-items: center;
+}
+
+.demo-users button {
+  padding: 8px 10px;
 }
 
 .form,
@@ -131,6 +143,15 @@ textarea {
   border-radius: 12px;
   margin: 14px 0;
   font-weight: 700;
+}
+
+.message ul {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.small-message {
+  font-weight: 600;
 }
 
 .message.error {
@@ -181,7 +202,6 @@ textarea {
 .card {
   padding: 20px;
 }
-
 
 .card-title-row {
   display: flex;

@@ -1,0 +1,16 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\Jegymester",
+    "\\Jegymester\\JegymesterApp",
+    "\\Jegymester\\JegymesterApp\\app",
+    "\\Jegymester\\JegymesterApp\\app\\blueprints",
+    "\\Jegymester\\JegymesterApp\\app\\blueprints\\hall",
+    "\\Jegymester\\JegymesterApp\\app\\blueprints\\movie",
+    "\\Jegymester\\JegymesterApp\\app\\blueprints\\screening",
+    "\\Jegymester\\JegymesterApp\\app\\blueprints\\ticket",
+    "\\Jegymester\\JegymesterApp\\app\\blueprints\\user"
+  ],
+  "SelectedNode": "\\Jegymester\\JegymesterApp\\app\\blueprints\\movie\\routes.py",
+  "PreviewInSolutionExplorer": false
+}

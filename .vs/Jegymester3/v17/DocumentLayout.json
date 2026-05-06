@@ -1,0 +1,172 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\movie\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\movie\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\hall\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\movie\\schemas.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\movie\\schemas.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\ticket\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\ticket\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\screening\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\screening\\routes.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\__init__.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\hall\\__init__.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\schemas.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\hall\\schemas.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\service.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Jegymester\\JegymesterApp\\app\\blueprints\\hall\\service.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 7,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c64b9c2-e352-428e-a56d-0ace190b99a6}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{3ae79031-e1bc-11d0-8f78-00a0c9110057}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "routes.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\ticket\\routes.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\ticket\\routes.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\ticket\\routes.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\ticket\\routes.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T13:00:53.373Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "routes.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\screening\\routes.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\screening\\routes.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\screening\\routes.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\screening\\routes.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABUAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T12:59:21.322Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "schemas.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\movie\\schemas.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\movie\\schemas.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\movie\\schemas.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\movie\\schemas.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T12:58:50.066Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "routes.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\movie\\routes.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\movie\\routes.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\movie\\routes.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\movie\\routes.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABkAAAAkAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T12:56:50.636Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "routes.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\routes.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\routes.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\routes.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\routes.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADgAAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T12:53:16.251Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "__init__.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\__init__.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\__init__.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\__init__.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\__init__.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T12:53:14Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "schemas.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\schemas.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\schemas.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\schemas.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\schemas.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T12:53:10.713Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "service.py",
+              "DocumentMoniker": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\service.py",
+              "RelativeDocumentMoniker": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\service.py",
+              "ToolTip": "C:\\Users\\andre\\source\\repos\\akuash\\Jegymester3\\Jegymester\\JegymesterApp\\app\\blueprints\\hall\\service.py",
+              "RelativeToolTip": "Jegymester\\JegymesterApp\\app\\blueprints\\hall\\service.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-05-06T12:51:53.148Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

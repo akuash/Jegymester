@@ -1,8 +1,5 @@
 from apiflask import HTTPError
 
-from app.extensions import auth
-from app.blueprints import role_required
-
 from app.blueprints.hall import bp
 from app.blueprints.hall.schemas import (
     HallRequestSchema,
@@ -11,15 +8,12 @@ from app.blueprints.hall.schemas import (
     ActionResponseSchema,
 )
 from app.blueprints.hall.service import HallService
+from app.security import token_auth
 
-@bp.route('/')
-def index():
-    return 'Hall blueprint'
 
 @bp.get("/")
+@bp.auth_required(token_auth)
 @bp.output(HallResponseSchema(many=True), 200)
-@bp.auth_required(auth)
-@role_required(["felhasznalo","penztaros","adminisztrator"])
 def get_halls():
     success, response = HallService.get_all()
     if success:
@@ -28,9 +22,8 @@ def get_halls():
 
 
 @bp.get("/<int:hall_id>")
+@bp.auth_required(token_auth)
 @bp.output(HallResponseSchema, 200)
-@bp.auth_required(auth)
-@role_required(["felhasznalo","penztaros","adminisztrator"])
 def get_hall(hall_id: int):
     success, response = HallService.get_by_id(hall_id)
     if success:
@@ -39,10 +32,9 @@ def get_hall(hall_id: int):
 
 
 @bp.post("/")
+@bp.auth_required(token_auth, roles=['adminisztrator'])
 @bp.input(HallRequestSchema)
 @bp.output(HallResponseSchema, 201)
-@bp.auth_required(auth)
-@role_required(["adminisztrator"])
 def create_hall(json_data):
     success, response = HallService.create(json_data)
     if success:
@@ -51,10 +43,9 @@ def create_hall(json_data):
 
 
 @bp.put("/<int:hall_id>")
+@bp.auth_required(token_auth, roles=['adminisztrator'])
 @bp.input(HallUpdateSchema)
 @bp.output(HallResponseSchema, 200)
-@bp.auth_required(auth)
-@role_required(["adminisztrator"])
 def update_hall(hall_id: int, json_data):
     success, response = HallService.update(hall_id, json_data)
     if success:
@@ -63,11 +54,11 @@ def update_hall(hall_id: int, json_data):
 
 
 @bp.delete("/<int:hall_id>")
+@bp.auth_required(token_auth, roles=['adminisztrator'])
 @bp.output(ActionResponseSchema, 200)
-@bp.auth_required(auth)
-@role_required(["adminisztrator"])
 def delete_hall(hall_id: int):
     success, response = HallService.delete(hall_id)
     if success:
         return response
     raise HTTPError(status_code=400, message=response)
+

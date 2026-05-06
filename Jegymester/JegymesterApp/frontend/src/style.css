@@ -1,0 +1,262 @@
+:root {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #172033;
+  background: #f5f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #e7ecf5;
+  color: #172033;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:hover {
+  filter: brightness(0.97);
+}
+
+button.active,
+button.primary {
+  background: #1f6feb;
+  color: white;
+}
+
+button.danger {
+  background: #d92d20;
+  color: white;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-card,
+.card,
+.hero,
+.app-header {
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 12px 35px rgba(15, 23, 42, 0.08);
+}
+
+.login-card {
+  width: min(520px, 100%);
+  padding: 28px;
+}
+
+.login-card h1,
+.app-header h1,
+.hero h2,
+.card h3 {
+  margin-top: 0;
+}
+
+.muted {
+  color: #64748b;
+}
+
+.tabs,
+.resource-tabs,
+nav,
+.actions,
+.form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tabs,
+.resource-tabs {
+  margin: 18px 0;
+}
+
+.form,
+.grid-form {
+  display: grid;
+  gap: 14px;
+}
+
+.grid-form {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  align-items: end;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-weight: 700;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: white;
+}
+
+textarea {
+  min-height: 44px;
+  resize: vertical;
+}
+
+.message {
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin: 14px 0;
+  font-weight: 700;
+}
+
+.message.error {
+  background: #fee4e2;
+  color: #912018;
+}
+
+.message.success {
+  background: #dcfae6;
+  color: #067647;
+}
+
+.message.info {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.app-header {
+  margin: 16px;
+  padding: 18px 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.app-header p {
+  margin-bottom: 0;
+}
+
+.content {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto 40px;
+  display: grid;
+  gap: 18px;
+}
+
+.hero {
+  padding: 22px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.card {
+  padding: 20px;
+}
+
+
+.card-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.card-title-row h3 {
+  margin-bottom: 0;
+}
+
+.search-bar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+
+.search-bar label {
+  flex: 1 1 280px;
+}
+
+.search-bar button {
+  white-space: nowrap;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 650px;
+}
+
+th,
+td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #f8fafc;
+  color: #334155;
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+.actions button {
+  padding: 8px 10px;
+}
+
+@media (max-width: 720px) {
+  .app-header,
+  .hero {
+    align-items: stretch;
+  }
+
+  nav,
+  .hero button {
+    width: 100%;
+  }
+
+  nav button,
+  .hero button {
+    flex: 1;
+  }
+}

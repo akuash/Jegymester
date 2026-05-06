@@ -1,20 +1,14 @@
 from apiflask import HTTPError
 
-from app.extensions import auth
-from app.blueprints import role_required
-
 from app.blueprints.movie import bp
 from app.blueprints.movie.schemas import MovieRequestSchema, MovieUpdateSchema, MovieResponseSchema
 from app.blueprints.movie.service import MovieService
+from app.security import token_auth
 
-@bp.route('/')
-def index():
-    return 'movie blueprint'
 
 @bp.get("/")
+@bp.auth_required(token_auth)
 @bp.output(MovieResponseSchema(many=True), 200)
-@bp.auth_required(auth)
-@role_required(["felhasznalo","penztaros","adminisztrator"])
 def get_movies():
     success, response = MovieService.get_all()
     if success:
@@ -23,9 +17,8 @@ def get_movies():
 
 
 @bp.get("/<int:movie_id>")
+@bp.auth_required(token_auth)
 @bp.output(MovieResponseSchema, 200)
-@bp.auth_required(auth)
-@role_required(["felhasznalo","penztaros","adminisztrator"])
 def get_movie(movie_id: int):
     success, response = MovieService.get_by_id(movie_id)
     if success:
@@ -34,10 +27,9 @@ def get_movie(movie_id: int):
 
 
 @bp.post("/")
+@bp.auth_required(token_auth, roles=['adminisztrator'])
 @bp.input(MovieRequestSchema)
 @bp.output(MovieResponseSchema, 201)
-@bp.auth_required(auth)
-@role_required(["adminisztrator"])
 def create_movie(json_data):
     success, response = MovieService.create(json_data)
     if success:
@@ -46,10 +38,9 @@ def create_movie(json_data):
 
 
 @bp.put("/<int:movie_id>")
+@bp.auth_required(token_auth, roles=['adminisztrator'])
 @bp.input(MovieUpdateSchema)
 @bp.output(MovieResponseSchema, 200)
-@bp.auth_required(auth)
-@role_required(["adminisztrator"])
 def update_movie(movie_id: int, json_data):
     success, response = MovieService.update(movie_id, json_data)
     if success:
@@ -58,10 +49,11 @@ def update_movie(movie_id: int, json_data):
 
 
 @bp.delete("/<int:movie_id>")
-@bp.auth_required(auth)
-@role_required(["adminisztrator"])
+@bp.auth_required(token_auth, roles=['adminisztrator'])
 def delete_movie(movie_id: int):
     success, response = MovieService.delete(movie_id)
     if success:
         return response, 200
     raise HTTPError(status_code=400, message=response)
+
+

@@ -65,3 +65,5 @@ class MovieService:
         except Exception as ex:
             db.session.rollback()
             return False, f"Hiba a film törlésekor: {ex}"
+
+

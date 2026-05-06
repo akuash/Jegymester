@@ -1,69 +1,78 @@
 from sqlalchemy import select
-from app.extensions import db
-from app.blueprints.user.shemas import PayLoadSchema, RoleSchema, UserRequestSchema, UserLoginRequestSchema, UserResponseSchema
-from app.models.user import User
-from app.models.role import Role
+from sqlalchemy.orm import joinedload
 
-from datetime import datetime, timedelta
-from authlib.jose import jwt
-from flask import current_app
+from app.extensions import db
+from app.models.role import Role
+from app.models.user import User
+from app.security import generate_access_token
+
 
 class UserService:
     @staticmethod
-    def create_user(request: UserRequestSchema):
+    def create_user(request):
         try:
-            if db.session.execute(
-                        db.select(User).filter_by(email=request["email"])
-                    ).scalar_one_or_none():
-                return False, "User with this email already exists"
-            
-            role_info = request.get("role") if isinstance(request, dict) else None
-            role_obj = None
-            if role_info:
-                role_name = role_info.get("name") if isinstance(role_info, dict) else getattr(role_info, "name", None)
-                role_obj = db.session.execute(select(Role).filter_by(name=role_name)).scalar_one_or_none()
-                if role_obj is None:
-                    role_obj = Role(**role_info) if isinstance(role_info, dict) else Role(name=role_name)
-                    db.session.add(role_obj)
-                    db.session.flush()
+            existing_user = db.session.execute(
+                select(User).filter(User.email == request["email"])
+            ).scalar_one_or_none()
+            if existing_user is not None:
+                return False, "Már létezik felhasználó ezzel az e-mail címmel"
 
-            user_data = dict(request) if isinstance(request, dict) else request
-            user_data.pop("role", None)
+            role = db.session.execute(
+                select(Role).filter(Role.name == "felhasznalo")
+            ).scalar_one_or_none()
+            if role is None:
+                role = Role(name="felhasznalo")
+                db.session.add(role)
+                db.session.flush()
 
-            user = User(**user_data)
-            user.set_password(user.password)
-            if role_obj:
-                user.role = role_obj
+            user = User(
+                name=request["name"],
+                email=request["email"],
+                password="",
+                phone=request["phone"],
+                role=role,
+            )
+            user.set_password(request["password"])
+
             db.session.add(user)
             db.session.commit()
-            return True, UserResponseSchema().dump(user)
+            db.session.refresh(user)
+
+            return True, user
         except Exception as ex:
             db.session.rollback()
             return False, str(ex)
-   
+
     @staticmethod
-    def login_user(request: UserLoginRequestSchema):
+    def login_user(request):
         try:
             user = db.session.execute(
-                        db.select(User).filter_by(email=request["email"])
-                    ).scalar_one_or_none()
-            if not user:
-                return False, "Incorrect E-mail"
+                select(User)
+                .options(joinedload(User.role))
+                .filter(User.email == request["email"])
+            ).scalar_one_or_none()
+
+            if user is None:
+                return False, "Hibás e-mail vagy jelszó"
+
             if not user.check_password(request["password"]):
-                return False, "Incorrect password"
-            user_schema = UserResponseSchema().dump(user)
-            user_schema["token"] = UserService.token_generate(user)
-            return True, user_schema
+                return False, "Hibás e-mail vagy jelszó"
+
+            access_token, expires_in = generate_access_token(user)
+            return True, {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": expires_in,
+                "user": user,
+            }
         except Exception as ex:
             return False, str(ex)
 
     @staticmethod
-    def token_generate(user: User):
-        payload = PayLoadSchema()
-        payload.exp = int((datetime.now() + timedelta(hours=1)).timestamp())
-        payload.user_id = user.id
-        payload.role = user.role
-        return jwt.encode({ "alg" : "RS256" },
-                          PayLoadSchema().dump(payload),
-                          current_app.config["SECRET_KEY"]
-                          )
+    def get_all_users():
+        users = db.session.execute(
+            select(User)
+            .options(joinedload(User.role))
+            .order_by(User.id)
+        ).scalars().all()
+        return True, users

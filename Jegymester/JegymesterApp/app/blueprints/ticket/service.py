@@ -2,9 +2,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
+from app.models.screening import Screening
 from app.models.ticket import Ticket
 from app.models.user import User
-from app.models.screening import Screening
 
 
 class TicketService:
@@ -78,7 +78,7 @@ class TicketService:
             return False, f"Hiba a jegy létrehozásakor: {ex}"
 
     @staticmethod
-    def buy(ticket_id: int, data):
+    def buy(ticket_id: int, user_id: int | None):
         try:
             ticket = db.session.get(Ticket, ticket_id)
             if ticket is None:
@@ -86,8 +86,6 @@ class TicketService:
 
             if not ticket.available:
                 return False, "Ez a jegy már nem elérhető"
-
-            user_id = data.get("user_id")
 
             if user_id is not None:
                 user = db.session.get(User, user_id)
@@ -108,16 +106,14 @@ class TicketService:
             return False, f"Hiba a jegyvásárláskor: {ex}"
 
     @staticmethod
-    def cancel(ticket_id: int, data):
+    def cancel(ticket_id: int, requester: User):
         try:
             ticket = db.session.get(Ticket, ticket_id)
             if ticket is None:
                 return False, "Nincs ilyen jegy"
 
-            user_id = data.get("user_id")
-
-            if ticket.user_id is not None and user_id != ticket.user_id:
-                return False, "Csak a jegy tulajdonosa törölheti a jegyet"
+            if requester.is_user() and ticket.user_id != requester.id:
+                return False, "Csak a saját jegyedet törölheted"
 
             db.session.delete(ticket)
             db.session.commit()
@@ -145,3 +141,4 @@ class TicketService:
         except Exception as ex:
             db.session.rollback()
             return False, f"Hiba a jegy visszaállításakor: {ex}"
+

@@ -3,12 +3,14 @@ import { createRoot } from 'react-dom/client';
 import {
   apiRequest,
   clearAuth,
+  getCurrentUserId,
   getMe,
-  getSavedAuth,
   getRole,
+  getSavedAuth,
   isAdmin,
   login,
   registerUser,
+  safeRequest,
   saveAuth,
 } from './api';
 import './style.css';
@@ -25,10 +27,11 @@ const resources = {
     ],
     emptyForm: { name: '', description: '' },
     fields: [
-      ['name', 'Film neve', 'text'],
-      ['description', 'Leírás', 'textarea'],
+      ['name', 'Film neve', 'text', true],
+      ['description', 'Leírás', 'textarea', false],
     ],
     search: {
+      label: 'Film keresése',
       placeholder: 'Keresés film címe vagy leírása alapján...',
       fields: ['name', 'description'],
     },
@@ -44,8 +47,8 @@ const resources = {
     ],
     emptyForm: { name: '', capacity: '' },
     fields: [
-      ['name', 'Terem neve', 'text'],
-      ['capacity', 'Férőhely', 'number'],
+      ['name', 'Terem neve', 'text', true],
+      ['capacity', 'Férőhely', 'number', true],
     ],
   },
   screenings: {
@@ -63,10 +66,10 @@ const resources = {
     ],
     emptyForm: { time: '', place: '', movie_id: '', hall_id: '' },
     fields: [
-      ['time', 'Idő', 'number'],
-      ['place', 'Hely', 'text'],
-      ['movie_id', 'Film ID', 'number'],
-      ['hall_id', 'Terem ID', 'number'],
+      ['time', 'Idő', 'number', true],
+      ['place', 'Hely', 'text', true],
+      ['movie_id', 'Film ID', 'number', true],
+      ['hall_id', 'Terem ID', 'number', true],
     ],
   },
   tickets: {
@@ -83,9 +86,9 @@ const resources = {
     ],
     emptyForm: { cost: '', screening_id: '', user_id: '' },
     fields: [
-      ['cost', 'Ár', 'number'],
-      ['screening_id', 'Vetítés ID', 'number'],
-      ['user_id', 'Felhasználó ID (üresen hagyható)', 'number'],
+      ['cost', 'Ár', 'number', true],
+      ['screening_id', 'Vetítés ID', 'number', true],
+      ['user_id', 'Felhasználó ID (üresen hagyható)', 'number', false],
     ],
     createOnly: true,
     noDelete: true,
@@ -104,6 +107,12 @@ const resources = {
     readOnly: true,
   },
 };
+
+const demoUsers = [
+  { label: 'Admin', email: 'admin@jegymester.hu', password: 'admin123' },
+  { label: 'Pénztáros', email: 'cashier@jegymester.hu', password: 'cashier123' },
+  { label: 'Felhasználó', email: 'user@jegymester.hu', password: 'user123' },
+];
 
 function getValue(row, path) {
   return path.split('.').reduce((value, key) => value?.[key], row);
@@ -127,26 +136,57 @@ function filterRows(rows, searchText, fields) {
 
 function normalizePayload(form) {
   const payload = {};
+  const numberFields = ['capacity', 'time', 'movie_id', 'hall_id', 'cost', 'screening_id', 'user_id'];
 
-  Object.entries(form).forEach(([key, value]) => {
+  Object.entries(form).forEach(([key, rawValue]) => {
+    const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+
     if (value === '') {
       payload[key] = null;
       return;
     }
 
-    if (['capacity', 'time', 'movie_id', 'hall_id', 'cost', 'screening_id', 'user_id'].includes(key)) {
-      payload[key] = Number(value);
-    } else {
-      payload[key] = value;
-    }
+    payload[key] = numberFields.includes(key) ? Number(value) : value;
   });
 
   return payload;
 }
 
+function buildAuthFromLoginResponse(response) {
+  const token = response?.access_token || response?.token || response?.jwt;
+
+  if (!token) {
+    throw new Error('A backend nem adott vissza JWT tokent. Ellenőrizd a /api/user/login választ.');
+  }
+
+  return {
+    token,
+    tokenType: response.token_type || 'Bearer',
+    expiresIn: response.expires_in,
+    user: response.user,
+  };
+}
+
 function Message({ message, type = 'info' }) {
   if (!message) return null;
   return <div className={`message ${type}`}>{message}</div>;
+}
+
+function ErrorList({ errors }) {
+  const items = Object.entries(errors || {}).filter(([, value]) => Boolean(value));
+
+  if (items.length === 0) return null;
+
+  return (
+    <section className="message error small-message">
+      <strong>Nem minden adat töltődött be:</strong>
+      <ul>
+        {items.map(([key, value]) => (
+          <li key={key}>{resources[key]?.label || key}: {value}</li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function LoginPage({ onLogin }) {
@@ -165,15 +205,7 @@ function LoginPage({ onLogin }) {
 
     try {
       const response = await login(loginForm.email, loginForm.password);
-      if (!response?.access_token) {
-        throw new Error('A backend nem adott vissza JWT tokent.');
-      }
-      const auth = {
-        token: response.access_token,
-        tokenType: response.token_type || 'Bearer',
-        expiresIn: response.expires_in,
-        user: response.user,
-      };
+      const auth = buildAuthFromLoginResponse(response);
       saveAuth(auth);
       onLogin(auth);
     } catch (err) {
@@ -190,10 +222,16 @@ function LoginPage({ onLogin }) {
     setLoading(true);
 
     try {
-      await registerUser(registerForm);
+      await registerUser({
+        name: registerForm.name.trim(),
+        email: registerForm.email.trim(),
+        phone: registerForm.phone.trim(),
+        password: registerForm.password,
+      });
       setSuccess('Sikeres regisztráció. Most jelentkezz be az e-mail címmel és jelszóval.');
       setMode('login');
-      setLoginForm({ email: registerForm.email, password: '' });
+      setLoginForm({ email: registerForm.email.trim(), password: '' });
+      setRegisterForm({ name: '', email: '', password: '', phone: '' });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -201,44 +239,62 @@ function LoginPage({ onLogin }) {
     }
   }
 
+  function fillDemoUser(user) {
+    setMode('login');
+    setError('');
+    setSuccess('');
+    setLoginForm({ email: user.email, password: user.password });
+  }
+
   return (
     <main className="login-page">
       <section className="login-card">
         <h1>JegyMester</h1>
-        <p className="muted">A frontend csak akkor enged be, ha a Python backend érvényes JWT tokent ad vissza.</p>
+        <p className="muted">A frontend a Python backend REST API végpontjait hívja, és csak érvényes JWT tokennel enged tovább.</p>
 
         <div className="tabs">
-          <button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Bejelentkezés</button>
-          <button className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Regisztráció</button>
+          <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Bejelentkezés</button>
+          <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Regisztráció</button>
         </div>
 
         <Message message={error} type="error" />
         <Message message={success} type="success" />
 
         {mode === 'login' ? (
-          <form onSubmit={handleLogin} className="form">
-            <label>
-              E-mail
-              <input
-                type="email"
-                required
-                value={loginForm.email}
-                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-                placeholder="admin@jegymester.hu"
-              />
-            </label>
-            <label>
-              Jelszó
-              <input
-                type="password"
-                required
-                value={loginForm.password}
-                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                placeholder="Jelszó"
-              />
-            </label>
-            <button className="primary" disabled={loading}>{loading ? 'Belépés...' : 'Belépés JWT tokennel'}</button>
-          </form>
+          <>
+            <div className="demo-users">
+              <span className="muted">Gyors kitöltés:</span>
+              {demoUsers.map((user) => (
+                <button key={user.email} type="button" onClick={() => fillDemoUser(user)}>{user.label}</button>
+              ))}
+            </div>
+
+            <form onSubmit={handleLogin} className="form">
+              <label>
+                E-mail
+                <input
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={loginForm.email}
+                  onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                  placeholder="admin@jegymester.hu"
+                />
+              </label>
+              <label>
+                Jelszó
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  placeholder="admin123"
+                />
+              </label>
+              <button className="primary" disabled={loading}>{loading ? 'Belépés...' : 'Belépés JWT tokennel'}</button>
+            </form>
+          </>
         ) : (
           <form onSubmit={handleRegister} className="form">
             <label>
@@ -251,7 +307,7 @@ function LoginPage({ onLogin }) {
             </label>
             <label>
               Telefon
-              <input required value={registerForm.phone} onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })} />
+              <input required minLength="3" value={registerForm.phone} onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })} />
             </label>
             <label>
               Jelszó
@@ -273,12 +329,12 @@ function Header({ auth, activePage, setActivePage, onLogout }) {
     <header className="app-header">
       <div>
         <h1>JegyMester Frontend</h1>
-        <p>{auth.user?.name} · <strong>{role || 'nincs szerepkör'}</strong></p>
+        <p>{auth.user?.name || 'Felhasználó'} · <strong>{role || 'nincs szerepkör'}</strong></p>
       </div>
       <nav>
-        <button className={activePage === 'home' ? 'active' : ''} onClick={() => setActivePage('home')}>Kezdőlap</button>
-        {admin && <button className={activePage === 'admin' ? 'active' : ''} onClick={() => setActivePage('admin')}>Admin kezelő</button>}
-        <button onClick={onLogout}>Kijelentkezés</button>
+        <button type="button" className={activePage === 'home' ? 'active' : ''} onClick={() => setActivePage('home')}>Kezdőlap</button>
+        {admin && <button type="button" className={activePage === 'admin' ? 'active' : ''} onClick={() => setActivePage('admin')}>Admin kezelő</button>}
+        <button type="button" onClick={onLogout}>Kijelentkezés</button>
       </nav>
     </header>
   );
@@ -301,7 +357,7 @@ function DataTable({ columns, rows, actions }) {
             <tr key={row.id}>
               {columns.map(([key]) => {
                 const value = getValue(row, key);
-                return <td key={key}>{typeof value === 'boolean' ? (value ? 'igen' : 'nem') : value ?? '-'}</td>;
+                return <td key={key}>{formatCellValue(value)}</td>;
               })}
               {actions && <td className="actions">{actions(row)}</td>}
             </tr>
@@ -312,54 +368,13 @@ function DataTable({ columns, rows, actions }) {
   );
 }
 
-function HomePage({ auth }) {
-  const [data, setData] = useState({ movies: [], halls: [], screenings: [] });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  async function loadHomeData() {
-    setError('');
-    setLoading(true);
-    try {
-      const [movies, halls, screenings] = await Promise.all([
-        apiRequest('/movie/', {}, auth.token),
-        apiRequest('/hall/', {}, auth.token),
-        apiRequest('/screening/', {}, auth.token),
-      ]);
-      setData({ movies, halls, screenings });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadHomeData();
-  }, [auth.token]);
-
-  return (
-    <main className="content">
-      <section className="hero">
-        <div>
-          <h2>Kezdőlap</h2>
-          <p>Ez az oldal minden bejelentkezett felhasználónak látható. Az admin funkciók külön menüben vannak.</p>
-        </div>
-        <button onClick={loadHomeData}>Frissítés</button>
-      </section>
-      <Message message={error} type="error" />
-      {loading ? <p>Adatok betöltése...</p> : (
-        <>
-          <ResourceBlock title="Filmek" config={resources.movies} rows={data.movies} />
-          <ResourceBlock title="Termek" config={resources.halls} rows={data.halls} />
-          <ResourceBlock title="Vetítések" config={resources.screenings} rows={data.screenings} />
-        </>
-      )}
-    </main>
-  );
+function formatCellValue(value) {
+  if (typeof value === 'boolean') return value ? 'igen' : 'nem';
+  if (value === null || value === undefined || value === '') return '-';
+  return String(value);
 }
 
-function ResourceBlock({ title, config, rows }) {
+function ResourceBlock({ title, config, rows, error, actions }) {
   const [searchText, setSearchText] = useState('');
   const filteredRows = useMemo(
     () => filterRows(rows, searchText, config.search?.fields),
@@ -370,13 +385,15 @@ function ResourceBlock({ title, config, rows }) {
     <section className="card">
       <div className="card-title-row">
         <h3>{title}</h3>
-        {config.search && <span className="muted">Találatok: {filteredRows.length} / {rows.length}</span>}
+        <span className="muted">Találatok: {filteredRows.length} / {rows.length}</span>
       </div>
+
+      {error && <Message message={error} type="error" />}
 
       {config.search && (
         <div className="search-bar">
           <label>
-            Film keresése
+            {config.search.label || 'Keresés'}
             <input
               type="search"
               value={searchText}
@@ -388,8 +405,94 @@ function ResourceBlock({ title, config, rows }) {
         </div>
       )}
 
-      <DataTable columns={config.columns} rows={filteredRows} />
+      <DataTable columns={config.columns} rows={filteredRows} actions={actions} />
     </section>
+  );
+}
+
+function HomePage({ auth }) {
+  const token = auth.token;
+  const userId = getCurrentUserId(auth);
+  const [data, setData] = useState({ movies: [], halls: [], screenings: [], myTickets: [] });
+  const [errors, setErrors] = useState({});
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  async function loadHomeData() {
+    setErrors({});
+    setMessage('');
+    setLoading(true);
+
+    const requests = {
+      movies: safeRequest('/movie/', {}, token),
+      halls: safeRequest('/hall/', {}, token),
+      screenings: safeRequest('/screening/', {}, token),
+      myTickets: userId ? safeRequest(`/ticket/user/${userId}`, {}, token) : Promise.resolve({ ok: true, data: [] }),
+    };
+
+    const results = await Promise.all(Object.entries(requests).map(async ([key, promise]) => [key, await promise]));
+    const nextData = { movies: [], halls: [], screenings: [], myTickets: [] };
+    const nextErrors = {};
+
+    results.forEach(([key, result]) => {
+      if (result.ok) {
+        nextData[key] = Array.isArray(result.data) ? result.data : [];
+      } else {
+        nextErrors[key] = result.error;
+      }
+    });
+
+    setData(nextData);
+    setErrors(nextErrors);
+    setLoading(false);
+  }
+
+  async function cancelMyTicket(ticketId) {
+    const confirmed = window.confirm(`Biztosan lemondod/törlöd ezt a jegyet? ID: ${ticketId}`);
+    if (!confirmed) return;
+
+    setMessage('');
+    const result = await safeRequest(`/ticket/${ticketId}/cancel`, { method: 'DELETE' }, token);
+    if (result.ok) {
+      setMessage('A jegy sikeresen törölve lett.');
+      await loadHomeData();
+    } else {
+      setErrors((current) => ({ ...current, myTickets: result.error }));
+    }
+  }
+
+  useEffect(() => {
+    loadHomeData();
+  }, [auth.token, userId]);
+
+  return (
+    <main className="content">
+      <section className="hero">
+        <div>
+          <h2>Kezdőlap</h2>
+          <p>Minden bejelentkezett felhasználó látja. Az admin műveletek csak adminisztrátor szerepkörrel jelennek meg.</p>
+        </div>
+        <button type="button" onClick={loadHomeData}>Frissítés</button>
+      </section>
+
+      <Message message={message} type="success" />
+      <ErrorList errors={errors} />
+
+      {loading ? <p>Adatok betöltése...</p> : (
+        <>
+          <ResourceBlock title="Filmek" config={resources.movies} rows={data.movies} error={errors.movies} />
+          <ResourceBlock title="Termek" config={resources.halls} rows={data.halls} error={errors.halls} />
+          <ResourceBlock title="Vetítések" config={resources.screenings} rows={data.screenings} error={errors.screenings} />
+          <ResourceBlock
+            title="Saját jegyeim"
+            config={resources.tickets}
+            rows={data.myTickets}
+            error={errors.myTickets}
+            actions={(row) => <button type="button" className="danger" onClick={() => cancelMyTicket(row.id)}>Jegy törlése</button>}
+          />
+        </>
+      )}
+    </main>
   );
 }
 
@@ -414,15 +517,16 @@ function AdminPanel({ auth }) {
   async function loadRows() {
     setError('');
     setLoading(true);
-    try {
-      const data = await apiRequest(config.endpoint, {}, token);
-      setRows(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(err.message);
+
+    const result = await safeRequest(config.endpoint, {}, token);
+    if (result.ok) {
+      setRows(Array.isArray(result.data) ? result.data : []);
+    } else {
+      setError(result.error);
       setRows([]);
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -443,7 +547,7 @@ function AdminPanel({ auth }) {
       const payload = normalizePayload(form);
       const method = editingId ? 'PUT' : 'POST';
       const path = editingId ? `${config.endpoint}${editingId}` : config.endpoint;
-      await apiRequest(path, { method, body: JSON.stringify(payload) }, token);
+      await apiRequest(path, { method, body: payload }, token);
       setMessage(editingId ? 'Sikeres módosítás.' : 'Sikeres létrehozás.');
       setForm(config.emptyForm || {});
       setEditingId(null);
@@ -460,6 +564,7 @@ function AdminPanel({ auth }) {
 
     setError('');
     setMessage('');
+
     try {
       await apiRequest(`${config.endpoint}${id}`, { method: 'DELETE' }, token);
       setMessage('Sikeres törlés.');
@@ -480,15 +585,16 @@ function AdminPanel({ auth }) {
     setError('');
   }
 
-  async function ticketAction(path, successText) {
+  async function ticketAction(path, method, successText) {
     setError('');
     setMessage('');
-    try {
-      await apiRequest(path, { method: path.endsWith('/cancel') ? 'DELETE' : 'POST' }, token);
+
+    const result = await safeRequest(path, { method }, token);
+    if (result.ok) {
       setMessage(successText);
       await loadRows();
-    } catch (err) {
-      setError(err.message);
+    } else {
+      setError(result.error);
     }
   }
 
@@ -499,12 +605,12 @@ function AdminPanel({ auth }) {
           <h2>Admin kezelő</h2>
           <p>Ez a rész csak <strong>adminisztrator</strong> szerepkörrel jelenik meg.</p>
         </div>
-        <button onClick={loadRows}>Frissítés</button>
+        <button type="button" onClick={loadRows}>Frissítés</button>
       </section>
 
       <div className="resource-tabs">
         {resourceKeys.map((key) => (
-          <button key={key} className={active === key ? 'active' : ''} onClick={() => setActive(key)}>{resources[key].label}</button>
+          <button key={key} type="button" className={active === key ? 'active' : ''} onClick={() => setActive(key)}>{resources[key].label}</button>
         ))}
       </div>
 
@@ -514,15 +620,20 @@ function AdminPanel({ auth }) {
       {!config.readOnly && (
         <section className="card">
           <h3>{editingId ? `${config.label} módosítása` : `${config.label} létrehozása`}</h3>
-          {config.createOnly && <p className="muted">Ennél a backendnél csak létrehozás van, általános PUT/DELETE nincs.</p>}
+          {config.createOnly && <p className="muted">Ennél a backendnél a frontend csak létrehozást és külön jegyműveleteket használ.</p>}
           <form onSubmit={handleSubmit} className="grid-form">
-            {config.fields.map(([key, label, type]) => (
+            {config.fields.map(([key, label, type, required]) => (
               <label key={key}>
                 {label}
                 {type === 'textarea' ? (
-                  <textarea value={form[key] ?? ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
+                  <textarea value={form[key] ?? ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} required={required} />
                 ) : (
-                  <input type={type} value={form[key] ?? ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} required={key !== 'user_id' && key !== 'description'} />
+                  <input
+                    type={type}
+                    value={form[key] ?? ''}
+                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                    required={required}
+                  />
                 )}
               </label>
             ))}
@@ -537,13 +648,13 @@ function AdminPanel({ auth }) {
       <section className="card">
         <div className="card-title-row">
           <h3>{config.label} táblázat</h3>
-          {config.search && <span className="muted">Találatok: {filteredRows.length} / {rows.length}</span>}
+          <span className="muted">Találatok: {filteredRows.length} / {rows.length}</span>
         </div>
 
         {config.search && (
           <div className="search-bar">
             <label>
-              Film keresése
+              {config.search.label || 'Keresés'}
               <input
                 type="search"
                 value={searchText}
@@ -561,12 +672,12 @@ function AdminPanel({ auth }) {
             rows={filteredRows}
             actions={!config.readOnly ? (row) => (
               <>
-                {!config.createOnly && <button onClick={() => startEdit(row)}>Szerkesztés</button>}
-                {!config.noDelete && <button className="danger" onClick={() => handleDelete(row)}>Törlés</button>}
+                {!config.createOnly && <button type="button" onClick={() => startEdit(row)}>Szerkesztés</button>}
+                {!config.noDelete && <button type="button" className="danger" onClick={() => handleDelete(row)}>Törlés</button>}
                 {active === 'tickets' && (
                   <>
-                    <button onClick={() => ticketAction(`/ticket/${row.id}/release`, 'Jegy felszabadítva.')}>Release</button>
-                    <button className="danger" onClick={() => ticketAction(`/ticket/${row.id}/cancel`, 'Jegy lemondva.')}>Cancel</button>
+                    <button type="button" onClick={() => ticketAction(`/ticket/${row.id}/release`, 'POST', 'Jegy felszabadítva.')}>Felszabadítás</button>
+                    <button type="button" className="danger" onClick={() => ticketAction(`/ticket/${row.id}/cancel`, 'DELETE', 'Jegy törölve.')}>Törlés</button>
                   </>
                 )}
               </>
@@ -590,6 +701,7 @@ function App() {
         setChecking(false);
         return;
       }
+
       try {
         const me = await getMe(saved.token);
         const updated = { ...saved, user: me };
@@ -606,6 +718,11 @@ function App() {
     verifySavedToken();
   }, []);
 
+  function handleLogin(nextAuth) {
+    setAuth(nextAuth);
+    setActivePage('home');
+  }
+
   function logout() {
     clearAuth();
     setAuth(null);
@@ -617,7 +734,7 @@ function App() {
   }
 
   if (!auth) {
-    return <LoginPage onLogin={setAuth} />;
+    return <LoginPage onLogin={handleLogin} />;
   }
 
   return (

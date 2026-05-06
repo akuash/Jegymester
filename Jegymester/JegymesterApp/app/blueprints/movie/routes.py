@@ -1,7 +1,12 @@
 from apiflask import HTTPError
 
 from app.blueprints.movie import bp
-from app.blueprints.movie.schemas import MovieRequestSchema, MovieUpdateSchema, MovieResponseSchema
+from app.blueprints.movie.schemas import (
+    MovieRequestSchema,
+    MovieUpdateSchema,
+    MovieResponseSchema,
+    ActionResponseSchema,
+)
 from app.blueprints.movie.service import MovieService
 from app.security import token_auth
 
@@ -27,7 +32,7 @@ def get_movie(movie_id: int):
 
 
 @bp.post("/")
-@bp.auth_required(token_auth, roles=['adminisztrator'])
+@bp.auth_required(token_auth, roles=["adminisztrator"])
 @bp.input(MovieRequestSchema)
 @bp.output(MovieResponseSchema, 201)
 def create_movie(json_data):
@@ -38,7 +43,7 @@ def create_movie(json_data):
 
 
 @bp.put("/<int:movie_id>")
-@bp.auth_required(token_auth, roles=['adminisztrator'])
+@bp.auth_required(token_auth, roles=["adminisztrator"])
 @bp.input(MovieUpdateSchema)
 @bp.output(MovieResponseSchema, 200)
 def update_movie(movie_id: int, json_data):
@@ -49,11 +54,10 @@ def update_movie(movie_id: int, json_data):
 
 
 @bp.delete("/<int:movie_id>")
-@bp.auth_required(token_auth, roles=['adminisztrator'])
+@bp.auth_required(token_auth, roles=["adminisztrator"])
+@bp.output(ActionResponseSchema, 200)
 def delete_movie(movie_id: int):
     success, response = MovieService.delete(movie_id)
     if success:
-        return response, 200
+        return response
     raise HTTPError(status_code=400, message=response)
-
-

@@ -18,6 +18,7 @@ const RESERVATIONS_KEY = 'jegymester_reservations_v2';
 const HALL_CONFIG_KEY = 'jegymester_hall_config_v2';
 const SCHEDULE_META_KEY = 'jegymester_schedule_meta_v2';
 const PROFILE_OVERRIDES_KEY = 'jegymester_profile_overrides_v2';
+const PUBLIC_DAYS_AHEAD = 21;
 
 const ticketCategories = {
   adult: { label: 'Felnőtt', price: 2500 },
@@ -272,6 +273,33 @@ function getFreeSeats(screeningId, hall, reservations, hallConfigs) {
   return allSeats.filter((seat) => !taken.has(seat) && !closed.has(seat));
 }
 
+function getAvailabilitySummary(screening, hall, reservations = getReservations(), hallConfigs = getHallConfigs()) {
+  const capacity = getHallEffectiveCapacity(hall, hallConfigs);
+  const takenCount = getTakenSeats(screening?.id, reservations).length;
+  const closedCount = (hallConfigs?.[hall?.id]?.closedSeats || []).filter((seat) => generateSeats(capacity).includes(seat)).length;
+  const freeSeats = getFreeSeats(screening?.id, hall, reservations, hallConfigs);
+  const free = freeSeats.length;
+  const occupiedPercent = capacity > 0 ? Math.min(100, Math.round(((takenCount + closedCount) / capacity) * 100)) : 100;
+
+  return {
+    capacity,
+    taken: takenCount,
+    closed: closedCount,
+    free,
+    freeSeats,
+    soldOut: free <= 0,
+    almostSoldOut: free > 0 && free <= 5,
+    occupiedPercent,
+  };
+}
+
+function normalizeTicketCount(value, max = MAX_HALL_CAPACITY) {
+  const numeric = Math.floor(Number(value));
+  const safeMax = Math.max(1, Number(max) || 1);
+  if (!Number.isFinite(numeric) || numeric < 1) return 1;
+  return Math.min(safeMax, numeric);
+}
+
 function calculateTotal(categoryKey, seats, hallConfig = {}) {
   const category = ticketCategories[categoryKey] || ticketCategories.adult;
   const count = seats.length;
@@ -317,8 +345,71 @@ function todayDateValue() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function dateValueAfterDays(days = 0) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
+}
+
 function getScreeningDate(screening, meta = getScheduleMeta()) {
-  return meta?.[screening?.id]?.date || todayDateValue();
+  return screening?.date || meta?.[screening?.id]?.date || todayDateValue();
+}
+
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.results)) return value.results;
+  return [];
+}
+
+function normalizeCatalogData(rawData = {}) {
+  const movies = asArray(rawData.movies);
+  const halls = asArray(rawData.halls);
+  const screenings = asArray(rawData.screenings);
+
+  return {
+    movies: movies.length ? movies : publicDemoData.movies,
+    halls: halls.length ? halls : publicDemoData.halls,
+    screenings: screenings.length ? screenings : publicDemoData.screenings,
+  };
+}
+
+function syntheticScreeningId(screening, dayIndex, position) {
+  const base = Number(screening?.id);
+  if (Number.isFinite(base)) return base * 1000 + dayIndex * 50 + position;
+  return 9000000 + dayIndex * 100 + position;
+}
+
+function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
+  const catalog = normalizeCatalogData(rawData);
+  const sourceScreenings = catalog.screenings.length ? catalog.screenings : publicDemoData.screenings;
+
+  const expandedScreenings = Array.from({ length: Math.max(1, Number(days) || 1) }, (_, dayIndex) => {
+    const date = dateValueAfterDays(dayIndex);
+    return sourceScreenings.map((screening, index) => ({
+      ...screening,
+      id: syntheticScreeningId(screening, dayIndex, index),
+      originalScreeningId: screening.id,
+      date,
+    }));
+  }).flat();
+
+  return {
+    ...catalog,
+    screenings: expandedScreenings,
+  };
+}
+
+function availableScheduleDates(days = PUBLIC_DAYS_AHEAD) {
+  return Array.from({ length: Math.max(1, Number(days) || 1) }, (_, index) => dateValueAfterDays(index));
+}
+
+function formatDateHu(dateValue) {
+  const date = new Date(`${dateValue}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return dateValue;
+  return date.toLocaleDateString('hu-HU', { month: 'short', day: '2-digit', weekday: 'short' });
 }
 
 function getScreeningDateTimeFromParts(dateValue, timeValue) {
@@ -379,13 +470,13 @@ async function loadCatalogData(token = null, useDemoOnError = false) {
       apiRequest('/hall/', {}, token),
       apiRequest('/screening/', {}, token),
     ]);
-    return { data: { movies, halls, screenings }, usedDemo: false, error: '' };
+    return { data: normalizeCatalogData({ movies, halls, screenings }), usedDemo: false, error: '' };
   } catch (err) {
     if (useDemoOnError) {
       return {
-        data: publicDemoData,
+        data: normalizeCatalogData(publicDemoData),
         usedDemo: true,
-        error: 'A backend jelenleg tokenhez köti a filmek/vetítések listázását, ezért a bejelentkezés nélküli nézet demó műsorral működik. Ha a backend GET /api/movie/ és /api/screening/ végpontjai publikusak lesznek, automatikusan azokat használja.',
+        error: 'A backend jelenleg tokenhez köti a filmek/vetítések listázását, ezért a bejelentkezés nélküli nézet demó műsorral működik. A vendég jegyvásárlás ettől függetlenül működik a frontenden, e-mail és telefonszám megadásával.',
       };
     }
     throw err;
@@ -446,7 +537,7 @@ function Message({ message, type = 'info' }) {
 
 
 function PublicCatalog({ onGoLogin }) {
-  const [data, setData] = useState(publicDemoData);
+  const [data, setData] = useState(buildDailyCatalog(publicDemoData));
   const [reservations, setReservations] = useState(getReservations());
   const [hallConfigs, setHallConfigs] = useState(getHallConfigs());
   const [scheduleMeta, setScheduleMeta] = useState(getScheduleMeta());
@@ -473,6 +564,8 @@ function PublicCatalog({ onGoLogin }) {
     return [...new Set(values)];
   }, [data.screenings, data.halls]);
 
+  const scheduleDates = useMemo(() => availableScheduleDates(), []);
+
   const filteredScreenings = useMemo(() => {
     const movieQuery = normalizeSearchText(filters.movie);
     return data.screenings.filter((screening) => {
@@ -493,7 +586,7 @@ function PublicCatalog({ onGoLogin }) {
     setLoading(true);
     setError('');
     const result = await loadCatalogData(null, true);
-    setData(result.data);
+    setData(buildDailyCatalog(result.data));
     setError(result.error);
     setReservations(getReservations());
     setHallConfigs(getHallConfigs());
@@ -527,7 +620,15 @@ function PublicCatalog({ onGoLogin }) {
   }
 
   function toggleSeat(seat) {
-    setSelectedSeats((current) => current.includes(seat) ? current.filter((item) => item !== seat) : [...current, seat]);
+    const requested = normalizeTicketCount(ticketCount, getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free || 1);
+    setSelectedSeats((current) => {
+      if (current.includes(seat)) return current.filter((item) => item !== seat);
+      if (current.length >= requested) {
+        setError(`Már kiválasztottad a kért ${requested} jegyet. Növeld a jegyek számát, vagy törölj egy kijelölést.`);
+        return current;
+      }
+      return [...current, seat];
+    });
   }
 
   function createGuestPurchase() {
@@ -541,8 +642,19 @@ function PublicCatalog({ onGoLogin }) {
       setError('Vendég vásárláshoz kötelező az e-mail cím és a telefonszám.');
       return;
     }
+    const requested = normalizeTicketCount(ticketCount, getAvailabilitySummary(selectedScreening, selectedHall, getReservations(), getHallConfigs()).free || 1);
+    const availability = getAvailabilitySummary(selectedScreening, selectedHall, getReservations(), getHallConfigs());
+    if (availability.soldOut || availability.free < requested) {
+      setReservations(getReservations());
+      setError(`Erre a vetítésre már nincs elég szabad hely. Kért: ${requested}, szabad: ${availability.free}.`);
+      return;
+    }
     if (selectedSeats.length === 0) {
       setError('Válassz legalább 1 helyet.');
+      return;
+    }
+    if (selectedSeats.length !== requested) {
+      setError(`Pont ${requested} helyet kell kijelölni a vásárláshoz. Most kijelölve: ${selectedSeats.length}.`);
       return;
     }
     const freeSeatsNow = new Set(getFreeSeats(selectedScreening.id, selectedHall, getReservations(), getHallConfigs()));
@@ -590,24 +702,28 @@ function PublicCatalog({ onGoLogin }) {
             <label>Napszak<select value={filters.dayPart} onChange={(e) => setFilters({ ...filters, dayPart: e.target.value })}><option value="">Mindegy</option><option value="délelőtt">Délelőtt</option><option value="délután">Délután</option><option value="este">Este</option></select></label>
             <label>Mozihelyszín<select value={filters.place} onChange={(e) => setFilters({ ...filters, place: e.target.value })}><option value="">Mindegy</option>{places.map((place) => <option key={place} value={place}>{place}</option>)}</select></label>
           </div>
+          <div className="quick-date-row">
+            <button type="button" className={!filters.date ? 'active' : ''} onClick={() => setFilters({ ...filters, date: '' })}>Minden dátum</button>
+            {scheduleDates.slice(0, 10).map((dateValue) => (
+              <button key={dateValue} type="button" className={filters.date === dateValue ? 'active' : ''} onClick={() => setFilters({ ...filters, date: dateValue })}>{formatDateHu(dateValue)}</button>
+            ))}
+          </div>
           <section className="cards-grid">
             {filteredScreenings.map((screening) => {
               const movie = getScreeningMovie(screening, data.movies);
               const hall = getScreeningHall(screening, data.halls);
-              const capacity = getHallEffectiveCapacity(hall, hallConfigs);
-              const taken = getTakenSeats(screening.id, reservations).length;
-              const closed = (hallConfigs[hall?.id]?.closedSeats || []).length;
-              const free = Math.max(0, capacity - taken - closed);
+              const availability = getAvailabilitySummary(screening, hall, reservations, hallConfigs);
               return (
-                <article key={screening.id} className={`screening-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''}`}>
-                  <div className="card-title-row"><h3>{movie?.name}</h3><span className="badge">{getScreeningDate(screening, scheduleMeta)} · {timeToText(screening.time)}</span></div>
+                <article key={screening.id} className={`screening-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
+                  <div className="card-title-row"><h3>{movie?.name}</h3><span className={`badge ${availability.soldOut ? 'danger-badge' : availability.almostSoldOut ? 'warning-badge' : ''}`}>{availability.soldOut ? 'Elfogyott' : `${getScreeningDate(screening, scheduleMeta)} · ${timeToText(screening.time)}`}</span></div>
                   <p className="muted">{movie?.description}</p>
-                  <p><strong>Terem:</strong> {hall?.name || screening.place} · <strong>Szabad hely:</strong> {free} / {capacity}</p>
-                  <button className="primary" onClick={() => setSelectedScreeningId(screening.id)}>Vendégként erre veszek jegyet</button>
+                  <p><strong>Terem:</strong> {hall?.name || screening.place} · <strong>Szabad hely:</strong> {availability.free} / {availability.capacity}</p>
+                  <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
+                  <button className="primary" disabled={availability.soldOut} onClick={() => setSelectedScreeningId(screening.id)}>{availability.soldOut ? 'Nincs több szék' : 'Vendégként erre veszek jegyet'}</button>
                 </article>
               );
             })}
-            {filteredScreenings.length === 0 && <p>Nincs találat.</p>}
+            {filteredScreenings.length === 0 && <p>Nincs találat. Válassz másik dátumot, vagy töröld a dátumszűrést.</p>}
           </section>
           {selectedScreening && selectedHall && selectedMovie && (
             <section className="card nested-card">
@@ -616,15 +732,21 @@ function PublicCatalog({ onGoLogin }) {
                 <label>Név<input value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} placeholder="Vendég neve" /></label>
                 <label>E-mail cím<input type="email" required value={guest.email} onChange={(e) => setGuest({ ...guest, email: e.target.value })} /></label>
                 <label>Telefonszám<input required value={guest.phone} onChange={(e) => setGuest({ ...guest, phone: e.target.value })} /></label>
-                <label>Jegyek száma<input type="number" min="1" max={getFreeSeats(selectedScreening.id, selectedHall, reservations, hallConfigs).length} value={ticketCount} onChange={(e) => setTicketCount(e.target.value)} /></label>
+                <label>Jegyek száma<input type="number" min="1" max={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free || 1} value={ticketCount} onChange={(e) => { const max = getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free || 1; const next = normalizeTicketCount(e.target.value, max); setTicketCount(next); setSelectedSeats((current) => current.slice(0, next)); }} /></label>
                 <label>Kategória<select value={category} onChange={(e) => setCategory(e.target.value)}>{Object.entries(ticketCategories).map(([key, item]) => <option key={key} value={key}>{item.label} · {item.price} Ft/fő</option>)}</select></label>
                 <div className="stat-box"><span>Fizetendő</span><strong>{total} Ft</strong></div>
               </div>
+              <div className="ticket-summary">
+                <span>Szabad hely: <strong>{getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free}</strong></span>
+                <span>Terem állapota: <strong>{getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut ? 'Elfogyott' : 'Foglalható'}</strong></span>
+                <span>Kért jegy: <strong>{ticketCount}</strong></span>
+                <span>Kijelölve: <strong>{selectedSeats.length}</strong></span>
+              </div>
               <SeatGrid seats={selectedSeatsAll} selectedSeats={selectedSeats} takenSeats={takenSeats} vipSeats={selectedHallConfig.vipSeats || []} closedSeats={selectedHallConfig.closedSeats || []} onToggleSeat={toggleSeat} />
               <div className="form-actions">
-                <button type="button" onClick={autoSelectGuestSeats}>Automatikus helyválasztás</button>
+                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={autoSelectGuestSeats}>Automatikus helyválasztás</button>
                 <button type="button" onClick={() => setSelectedSeats([])}>Kijelölés törlése</button>
-                <button className="primary" type="button" onClick={createGuestPurchase}>Vendég jegyvásárlás</button>
+                <button className="primary" type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={createGuestPurchase}>Vendég jegyvásárlás</button>
                 <button type="button" onClick={onGoLogin}>Bejelentkezés / regisztráció</button>
               </div>
             </section>
@@ -765,7 +887,7 @@ function Header({ auth, activePage, setActivePage, onLogout }) {
   return (
     <header className="app-header">
       <div>
-        <h1>JegyMester Frontend</h1>
+        <h1>JegyMester Mozi</h1>
         <p>{displayUser?.name} · <strong>{role || 'nincs szerepkör'}</strong></p>
       </div>
       <nav>
@@ -874,6 +996,8 @@ function BookingPage({ auth }) {
     return [...new Set(values)];
   }, [data.screenings, data.halls]);
 
+  const scheduleDates = useMemo(() => availableScheduleDates(), []);
+
   const filteredScreenings = useMemo(() => {
     const movieQuery = normalizeSearchText(filters.movie);
 
@@ -891,7 +1015,7 @@ function BookingPage({ auth }) {
 
       return true;
     });
-  }, [data.screenings, data.movies, data.halls, filters]);
+  }, [data.screenings, data.movies, data.halls, filters, scheduleMeta]);
 
   async function loadHomeData() {
     setError('');
@@ -902,7 +1026,7 @@ function BookingPage({ auth }) {
         apiRequest('/hall/', {}, auth.token),
         apiRequest('/screening/', {}, auth.token),
       ]);
-      setData({ movies, halls, screenings });
+      setData(buildDailyCatalog({ movies, halls, screenings }));
       setReservations(getReservations());
       setHallConfigs(getHallConfigs());
       setScheduleMeta(getScheduleMeta());
@@ -976,7 +1100,15 @@ function BookingPage({ auth }) {
   }
 
   function toggleSeat(seat) {
-    setSelectedSeats((current) => current.includes(seat) ? current.filter((item) => item !== seat) : [...current, seat]);
+    const requested = normalizeTicketCount(ticketCount, getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free || 1);
+    setSelectedSeats((current) => {
+      if (current.includes(seat)) return current.filter((item) => item !== seat);
+      if (current.length >= requested) {
+        setError(`Már kiválasztottad a kért ${requested} jegyet. Növeld a jegyek számát, vagy törölj egy kijelölést.`);
+        return current;
+      }
+      return [...current, seat];
+    });
   }
 
   function createTicketOrder(orderType = 'reserved') {
@@ -993,8 +1125,21 @@ function BookingPage({ auth }) {
       return;
     }
 
+    const requested = normalizeTicketCount(ticketCount, getAvailabilitySummary(selectedScreening, selectedHall, getReservations(), getHallConfigs()).free || 1);
+    const availability = getAvailabilitySummary(selectedScreening, selectedHall, getReservations(), getHallConfigs());
+    if (availability.soldOut || availability.free < requested) {
+      setReservations(getReservations());
+      setError(`Erre a vetítésre már nincs elég szabad hely. Kért: ${requested}, szabad: ${availability.free}.`);
+      return;
+    }
+
     if (selectedSeats.length === 0) {
       setError('Válassz legalább 1 helyet, vagy használd az automatikus helyválasztást.');
+      return;
+    }
+
+    if (selectedSeats.length !== requested) {
+      setError(`Pont ${requested} helyet kell kijelölni. Most kijelölve: ${selectedSeats.length}.`);
       return;
     }
 
@@ -1076,7 +1221,7 @@ function BookingPage({ auth }) {
       <section className="hero">
         <div>
           <h2>Műsorrend böngészése, jegyfoglalás és jegyvásárlás</h2>
-          <p>A műsorrend film, dátum, napszak és mozihelyszín szerint szűrhető. A foglalási állapot 5 másodpercenként frissül.</p>
+          <p>A műsorrend film, dátum, napszak és mozihelyszín szerint szűrhető. A foglalási állapot 5 másodpercenként frissül, és a rendszer nem enged több jegyet, mint ahány szabad szék van az adott teremben.</p>
         </div>
         <button onClick={loadHomeData}>Frissítés</button>
       </section>
@@ -1119,29 +1264,33 @@ function BookingPage({ auth }) {
                 </select>
               </label>
             </div>
+            <div className="quick-date-row">
+              <button type="button" className={!filters.date ? 'active' : ''} onClick={() => setFilters({ ...filters, date: '' })}>Minden dátum</button>
+              {scheduleDates.slice(0, 10).map((dateValue) => (
+                <button key={dateValue} type="button" className={filters.date === dateValue ? 'active' : ''} onClick={() => setFilters({ ...filters, date: dateValue })}>{formatDateHu(dateValue)}</button>
+              ))}
+            </div>
           </section>
 
           <section className="cards-grid">
-            {filteredScreenings.length === 0 ? <p>Nincs találat.</p> : filteredScreenings.map((screening) => {
+            {filteredScreenings.length === 0 ? <p>Nincs találat. Válassz másik dátumot, vagy töröld a dátumszűrést.</p> : filteredScreenings.map((screening) => {
               const movie = getScreeningMovie(screening, data.movies);
               const hall = getScreeningHall(screening, data.halls);
-              const capacity = getHallEffectiveCapacity(hall, hallConfigs);
-              const taken = getTakenSeats(screening.id, reservations).length;
-              const closed = (hallConfigs[hall?.id]?.closedSeats || []).length;
-              const free = Math.max(0, capacity - taken - closed);
+              const availability = getAvailabilitySummary(screening, hall, reservations, hallConfigs);
               const info = getScheduleInfo(screening.id, scheduleMeta);
 
               return (
-                <article key={screening.id} className={`screening-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''}`}>
+                <article key={screening.id} className={`screening-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
                   <div className="card-title-row">
                     <h3>{movie?.name || `Film #${screening.movie_id}`}</h3>
-                    <span className="badge">{getScreeningDate(screening, scheduleMeta)} · {timeToText(screening.time)} · {getDayPart(screening.time)}</span>
+                    <span className={`badge ${availability.soldOut ? 'danger-badge' : availability.almostSoldOut ? 'warning-badge' : ''}`}>{availability.soldOut ? 'Elfogyott' : `${getScreeningDate(screening, scheduleMeta)} · ${timeToText(screening.time)} · ${getDayPart(screening.time)}`}</span>
                   </div>
                   <p className="muted">{movie?.description || 'Nincs leírás.'}</p>
                   <p><strong>Hely:</strong> {screening.place || hall?.name || '-'} · <strong>Terem:</strong> {hall?.name || '-'}</p>
-                  <p><strong>Szabad hely:</strong> {free} / {capacity} · <strong>Foglalt:</strong> {taken} · <strong>Lezárt:</strong> {closed}</p>
+                  <p><strong>Szabad hely:</strong> {availability.free} / {availability.capacity} · <strong>Foglalt:</strong> {availability.taken} · <strong>Lezárt:</strong> {availability.closed}</p>
+                  <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
                   <p><strong>Teljes filmidő reklámokkal:</strong> {info.total} perc · <strong>Terem foglalva takarítással:</strong> {info.roomBlocked} perc</p>
-                  <button className="primary" onClick={() => selectScreening(screening)}>Erre foglalok</button>
+                  <button className="primary" disabled={availability.soldOut} onClick={() => selectScreening(screening)}>{availability.soldOut ? 'Nincs több szék' : 'Erre foglalok / vásárolok'}</button>
                 </article>
               );
             })}
@@ -1150,7 +1299,7 @@ function BookingPage({ auth }) {
           {selectedScreening && selectedHall && (
             <section className="card">
               <div className="card-title-row">
-                <h3>Jegyfoglalás / jegyvásárlás: {selectedMovie?.name} · {timeToText(selectedScreening.time)}</h3>
+                <h3>Jegyfoglalás / jegyvásárlás: {selectedMovie?.name} · {getScreeningDate(selectedScreening, scheduleMeta)} {timeToText(selectedScreening.time)}</h3>
                 <span className="badge">Max. teremkapacitás: {MAX_HALL_CAPACITY}</span>
               </div>
 
@@ -1160,9 +1309,9 @@ function BookingPage({ auth }) {
                   <input
                     type="number"
                     min="1"
-                    max={getFreeSeats(selectedScreening.id, selectedHall, reservations, hallConfigs).length}
+                    max={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free || 1}
                     value={ticketCount}
-                    onChange={(e) => setTicketCount(e.target.value)}
+                    onChange={(e) => { const max = getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free || 1; const next = normalizeTicketCount(e.target.value, max); setTicketCount(next); setSelectedSeats((current) => current.slice(0, next)); }}
                   />
                 </label>
                 <label>
@@ -1183,6 +1332,14 @@ function BookingPage({ auth }) {
                 </div>
               </div>
 
+              <div className="ticket-summary">
+                <span>Terem kapacitása: <strong>{getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).capacity}</strong></span>
+                <span>Szabad hely: <strong>{getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).free}</strong></span>
+                <span>Terem állapota: <strong>{getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut ? 'Elfogyott' : 'Foglalható'}</strong></span>
+                <span>Kért jegy: <strong>{ticketCount}</strong></span>
+                <span>Kijelölve: <strong>{selectedSeats.length}</strong></span>
+              </div>
+
               <div className="legend">
                 <span><i className="legend-free" /> Szabad</span>
                 <span><i className="legend-selected" /> Kiválasztott</span>
@@ -1201,10 +1358,10 @@ function BookingPage({ auth }) {
               />
 
               <div className="form-actions">
-                <button type="button" onClick={() => autoSelectSeats()}>Automatikus helyválasztás {ticketCount} jegyre</button>
+                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={() => autoSelectSeats()}>Automatikus helyválasztás {ticketCount} jegyre</button>
                 <button type="button" onClick={() => setSelectedSeats([])}>Kijelölés törlése</button>
-                <button type="button" onClick={createReservation}>Foglalás létrehozása</button>
-                <button className="primary" type="button" onClick={createPurchase}>Azonnali jegyvásárlás</button>
+                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={createReservation}>Foglalás létrehozása</button>
+                <button className="primary" type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={createPurchase}>Azonnali jegyvásárlás</button>
               </div>
 
               <p className="muted small">
@@ -1290,7 +1447,7 @@ function CashierPage({ auth }) {
         apiRequest('/hall/', {}, auth.token),
         apiRequest('/screening/', {}, auth.token),
       ]);
-      setData({ movies, halls, screenings });
+      setData(buildDailyCatalog({ movies, halls, screenings }));
       setReservations(getReservations());
       setHallConfigs(getHallConfigs());
       setScheduleMeta(getScheduleMeta());
@@ -1366,7 +1523,15 @@ function CashierPage({ auth }) {
 
 
   function toggleCashierSaleSeat(seat) {
-    setCashierSaleSeats((current) => current.includes(seat) ? current.filter((item) => item !== seat) : [...current, seat]);
+    const requested = normalizeTicketCount(cashierSale.ticketCount, getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, reservations, hallConfigs).free || 1);
+    setCashierSaleSeats((current) => {
+      if (current.includes(seat)) return current.filter((item) => item !== seat);
+      if (current.length >= requested) {
+        setError(`Már kiválasztottad a kért ${requested} jegyet. Növeld a jegyek számát, vagy törölj egy kijelölést.`);
+        return current;
+      }
+      return [...current, seat];
+    });
   }
 
   function autoSelectCashierSaleSeats() {
@@ -1396,8 +1561,19 @@ function CashierPage({ auth }) {
       setError('Helyszíni vásárlásnál is add meg a vevő e-mail címét és telefonszámát.');
       return;
     }
+    const requested = normalizeTicketCount(cashierSale.ticketCount, getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, getReservations(), getHallConfigs()).free || 1);
+    const availability = getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, getReservations(), getHallConfigs());
+    if (availability.soldOut || availability.free < requested) {
+      setReservations(getReservations());
+      setError(`Erre a vetítésre már nincs elég szabad hely. Kért: ${requested}, szabad: ${availability.free}.`);
+      return;
+    }
     if (cashierSaleSeats.length === 0) {
       setError('Válassz legalább 1 helyet.');
+      return;
+    }
+    if (cashierSaleSeats.length !== requested) {
+      setError(`Pont ${requested} helyet kell kijelölni. Most kijelölve: ${cashierSaleSeats.length}.`);
       return;
     }
     const freeSeatsNow = new Set(getFreeSeats(cashierSelectedScreening.id, cashierSelectedHall, getReservations(), getHallConfigs()));
@@ -1462,17 +1638,23 @@ function CashierPage({ auth }) {
           <label>Vevő neve<input value={cashierSale.customerName} onChange={(e) => setCashierSale({ ...cashierSale, customerName: e.target.value })} /></label>
           <label>Vevő e-mail<input type="email" value={cashierSale.email} onChange={(e) => setCashierSale({ ...cashierSale, email: e.target.value })} /></label>
           <label>Vevő telefon<input value={cashierSale.phone} onChange={(e) => setCashierSale({ ...cashierSale, phone: e.target.value })} /></label>
-          <label>Jegyek száma<input type="number" min="1" value={cashierSale.ticketCount} onChange={(e) => setCashierSale({ ...cashierSale, ticketCount: e.target.value })} /></label>
+          <label>Jegyek száma<input type="number" min="1" max={getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, reservations, hallConfigs).free || 1} value={cashierSale.ticketCount} onChange={(e) => { const max = getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, reservations, hallConfigs).free || 1; const next = normalizeTicketCount(e.target.value, max); setCashierSale({ ...cashierSale, ticketCount: next }); setCashierSaleSeats((current) => current.slice(0, next)); }} /></label>
           <label>Kategória<select value={cashierSale.category} onChange={(e) => setCashierSale({ ...cashierSale, category: e.target.value })}>{Object.entries(ticketCategories).map(([key, item]) => <option key={key} value={key}>{item.label} · {item.price} Ft/fő</option>)}</select></label>
           <div className="stat-box"><span>Fizetendő</span><strong>{cashierTotal} Ft</strong></div>
         </div>
         {cashierSelectedScreening && cashierSelectedHall && (
           <>
+            <div className="ticket-summary">
+              <span>Szabad hely: <strong>{getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, reservations, hallConfigs).free}</strong></span>
+              <span>Terem állapota: <strong>{getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, reservations, hallConfigs).soldOut ? 'Elfogyott' : 'Eladható'}</strong></span>
+              <span>Kért jegy: <strong>{cashierSale.ticketCount}</strong></span>
+              <span>Kijelölve: <strong>{cashierSaleSeats.length}</strong></span>
+            </div>
             <SeatGrid seats={cashierSeatsAll} selectedSeats={cashierSaleSeats} takenSeats={cashierTakenSeats} vipSeats={cashierHallConfig.vipSeats || []} closedSeats={cashierHallConfig.closedSeats || []} onToggleSeat={toggleCashierSaleSeat} />
             <div className="form-actions">
-              <button type="button" onClick={autoSelectCashierSaleSeats}>Automatikus helyválasztás</button>
+              <button type="button" disabled={getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, reservations, hallConfigs).soldOut} onClick={autoSelectCashierSaleSeats}>Automatikus helyválasztás</button>
               <button type="button" onClick={() => setCashierSaleSeats([])}>Kijelölés törlése</button>
-              <button className="primary" type="button" onClick={createCashierSale}>Pénztári vásárlás mentése</button>
+              <button className="primary" type="button" disabled={getAvailabilitySummary(cashierSelectedScreening, cashierSelectedHall, reservations, hallConfigs).soldOut} onClick={createCashierSale}>Pénztári vásárlás mentése</button>
             </div>
           </>
         )}
@@ -1536,17 +1718,15 @@ function CashierPage({ auth }) {
           rows={data.screenings.map((screening) => {
             const movie = getScreeningMovie(screening, data.movies);
             const hall = getScreeningHall(screening, data.halls);
-            const capacity = getHallEffectiveCapacity(hall, hallConfigs);
-            const occupied = getTakenSeats(screening.id, reservations).length;
-            const closed = (hallConfigs[hall?.id]?.closedSeats || []).length;
+            const availability = getAvailabilitySummary(screening, hall, reservations, hallConfigs);
             const info = getScheduleInfo(screening.id, scheduleMeta);
             return {
               id: screening.id,
               movie: movie?.name || `Film #${screening.movie_id}`,
               time: timeToText(screening.time),
               hall: hall?.name || screening.place,
-              free: Math.max(0, capacity - occupied - closed),
-              occupied,
+              free: availability.soldOut ? 'Elfogyott' : `${availability.free} / ${availability.capacity}`,
+              occupied: availability.taken,
               runtime: `${info.total} perc`,
               blocked: `${info.roomBlocked} perc`,
             };

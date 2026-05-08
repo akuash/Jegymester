@@ -416,3 +416,338 @@ tr:last-child td {
     grid-template-columns: repeat(5, minmax(42px, 1fr));
   }
 }
+
+.quick-date-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.quick-date-row button {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #172033;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.quick-date-row button.active {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #ffffff;
+}
+
+/* Mozijegy-szolgáltatás jellegű megjelenés */
+:root {
+  color: #f8fafc;
+  background: #070b16;
+}
+
+body {
+  background:
+    radial-gradient(circle at 20% 10%, rgba(239, 68, 68, 0.20), transparent 32%),
+    radial-gradient(circle at 80% 0%, rgba(245, 158, 11, 0.18), transparent 26%),
+    linear-gradient(135deg, #070b16 0%, #111827 44%, #1f2937 100%);
+  min-height: 100vh;
+}
+
+.login-card,
+.card,
+.hero,
+.app-header,
+.screening-card {
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+}
+
+.app-header {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  border-radius: 22px;
+}
+
+.app-header h1::before,
+.login-card h1::before {
+  content: '🎬 ';
+}
+
+.hero {
+  background:
+    linear-gradient(135deg, rgba(220, 38, 38, 0.36), rgba(245, 158, 11, 0.20)),
+    rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.hero h2 {
+  font-size: clamp(1.7rem, 3vw, 2.6rem);
+  letter-spacing: -0.04em;
+}
+
+.muted,
+.small {
+  color: #cbd5e1;
+}
+
+button {
+  background: rgba(226, 232, 240, 0.12);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+button.active,
+button.primary {
+  background: linear-gradient(135deg, #dc2626, #f59e0b);
+  color: #fff7ed;
+  box-shadow: 0 10px 26px rgba(220, 38, 38, 0.28);
+}
+
+button.danger {
+  background: linear-gradient(135deg, #991b1b, #ef4444);
+}
+
+button:disabled {
+  background: rgba(71, 85, 105, 0.45) !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+
+input,
+textarea,
+select {
+  background: rgba(2, 6, 23, 0.72);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #f8fafc;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
+}
+
+.screening-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.screening-card::before,
+.screening-card::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  background: #070b16;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.screening-card::before {
+  left: -12px;
+}
+
+.screening-card::after {
+  right: -12px;
+}
+
+.screening-card:hover:not(.sold-out) {
+  transform: translateY(-3px);
+  border-color: rgba(245, 158, 11, 0.65);
+  box-shadow: 0 24px 80px rgba(245, 158, 11, 0.16);
+}
+
+.screening-card.selected-card {
+  border-color: #f59e0b;
+}
+
+.screening-card.sold-out {
+  opacity: 0.72;
+  filter: grayscale(0.28);
+}
+
+.badge {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge.warning-badge {
+  background: rgba(245, 158, 11, 0.26);
+  color: #fef3c7;
+}
+
+.badge.danger-badge {
+  background: rgba(220, 38, 38, 0.26);
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.50);
+}
+
+.capacity-meter {
+  height: 9px;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.capacity-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+}
+
+.ticket-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.ticket-summary span,
+.stat-box {
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.10), rgba(15, 23, 42, 0.65));
+  padding: 12px;
+}
+
+.ticket-summary strong,
+.stat-box strong {
+  color: #fbbf24;
+}
+
+.seat-grid {
+  position: relative;
+  padding-top: 48px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.92));
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.seat-grid::before {
+  content: 'VÁSZON';
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 76%);
+  text-align: center;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  padding: 7px 0;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(180deg, #f8fafc, #cbd5e1);
+  box-shadow: 0 12px 32px rgba(248, 250, 252, 0.20);
+}
+
+.seat {
+  border-radius: 12px 12px 7px 7px;
+  background: linear-gradient(180deg, #334155, #1e293b);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.seat:not(:disabled):hover {
+  transform: translateY(-2px);
+}
+
+.seat.selected {
+  background: linear-gradient(180deg, #f59e0b, #dc2626);
+  color: #fff7ed;
+}
+
+.seat.taken {
+  background: linear-gradient(180deg, #7f1d1d, #450a0a);
+  color: #fecaca;
+}
+
+.seat.vip {
+  background: linear-gradient(180deg, #facc15, #f97316);
+  color: #1f2937;
+}
+
+.seat.closed {
+  background: repeating-linear-gradient(45deg, #334155 0 8px, #0f172a 8px 16px);
+  color: #cbd5e1;
+}
+
+.table-wrap,
+.reservation-details {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(2, 6, 23, 0.44);
+}
+
+th {
+  background: rgba(15, 23, 42, 0.95);
+  color: #fde68a;
+}
+
+td {
+  border-bottom-color: rgba(255, 255, 255, 0.09);
+}
+
+.quick-date-row button {
+  background: rgba(15, 23, 42, 0.80);
+  color: #f8fafc;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.quick-date-row button.active {
+  background: linear-gradient(135deg, #dc2626, #f59e0b);
+  border-color: transparent;
+}
+
+/* Extra mozi-hangulat: filmcsík háttér, prémium jegykártyák */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.10;
+  background-image:
+    linear-gradient(90deg, transparent 0 18px, #fff 18px 28px, transparent 28px 52px),
+    linear-gradient(90deg, transparent 0 18px, #fff 18px 28px, transparent 28px 52px);
+  background-size: 52px 18px;
+  background-position: 0 20px, 0 calc(100% - 38px);
+  background-repeat: repeat-x;
+}
+
+.screening-card h3::before {
+  content: '🎟️ ';
+}
+
+.screening-card.sold-out {
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.screening-card.sold-out::before {
+  background: #111827;
+}
+
+.screening-card .capacity-meter + p {
+  margin-top: 10px;
+}
+
+.seat-grid {
+  box-shadow: inset 0 24px 45px rgba(248, 250, 252, 0.06), 0 22px 55px rgba(0, 0, 0, 0.22);
+}
+
+.seat:disabled {
+  opacity: 0.92;
+}
+
+.form-actions {
+  margin-top: 14px;
+}

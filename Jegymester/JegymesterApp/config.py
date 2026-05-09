@@ -4,12 +4,6 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 
 def load_private_key():
-    """Betölti a régi .ssh/private-key.pem fájlt, ha létezik.
-
-    Ha a fájl nincs meg, akkor sem áll le a backend: fejlesztéshez kap egy
-    stabil SECRET_KEY értéket. Éles környezetben érdemes környezeti változóból
-    megadni a SECRET_KEY-t.
-    """
     key_path = os.path.join(basedir, ".ssh", "private-key.pem")
     if os.path.exists(key_path):
         with open(key_path, "r", encoding="utf-8") as f:

@@ -751,3 +751,122 @@ body::before {
 .form-actions {
   margin-top: 14px;
 }
+
+.movie-ticket-card {
+  overflow: hidden;
+  position: relative;
+}
+
+.movie-card-layout {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.movie-card-body {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.movie-poster {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  background: linear-gradient(135deg, #111827, #374151);
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+}
+
+.movie-poster-card {
+  height: 178px;
+  border-radius: 16px;
+}
+
+.movie-poster-detail {
+  width: 150px;
+  height: 210px;
+  border-radius: 18px;
+  flex: 0 0 150px;
+}
+
+.movie-poster-fallback {
+  display: grid;
+  place-items: center;
+  color: #f8fafc;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.35);
+}
+
+.movie-poster-fallback span {
+  font-size: 2rem;
+}
+
+.booking-movie-header {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.06), rgba(31, 111, 235, 0.08));
+}
+
+.booking-movie-title {
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .movie-card-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .movie-poster-card {
+    height: 240px;
+  }
+
+  .booking-movie-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .movie-poster-detail {
+    width: 100%;
+    height: 260px;
+    flex-basis: auto;
+  }
+}
+
+.movie-poster-table {
+  width: 72px;
+  height: 104px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+}
+
+.image-url-text {
+  display: block;
+  font-size: 0.8rem;
+  max-width: 130px;
+}
+
+.movie-image-admin-box {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 170px;
+  gap: 18px;
+  align-items: center;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.06), rgba(31, 111, 235, 0.08));
+}
+
+@media (max-width: 720px) {
+  .movie-image-admin-box {
+    grid-template-columns: 1fr;
+  }
+}

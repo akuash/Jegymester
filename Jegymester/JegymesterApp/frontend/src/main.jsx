@@ -23,6 +23,18 @@ const LOCAL_SCREENINGS_KEY = 'jegymester_local_screenings_v3';
 const AUTO_SCREENING_ID_BASE = 8700000;
 const PUBLIC_DAYS_AHEAD = 21;
 
+const moviePosterByTitle = [
+  { src: '/movie-posters/avatar.jpg', titles: ['avatar'] },
+  { src: '/movie-posters/banana-joe.jpg', titles: ['banana joe', 'bananos joe', 'banános joe', 'bannanos joe'] },
+  { src: '/movie-posters/batman.jpg', titles: ['batman'] },
+  { src: '/movie-posters/boomerang.jpg', titles: ['boomerang'] },
+  { src: '/movie-posters/dune.jpg', titles: ['dune', 'dűne'] },
+  { src: '/movie-posters/forever-my-girl.jpg', titles: ['forever my girl'] },
+  { src: '/movie-posters/superman.jpg', titles: ['superman'] },
+  { src: '/movie-posters/kincs-ami-nincs.jpeg', titles: ['kincs ami nincs', 'kincs, ami nincs', 'kincs ami nincsen', 'kincs, ami nincsen'] },
+  { src: '/movie-posters/ovizsaru.jpg', titles: ['ovizsaru', 'ovi zsaru', 'óvizsaru', 'óvi zsaru', 'kindergarten cop'] },
+];
+
 const ticketCategories = {
   adult: { label: 'Felnőtt', price: 2500 },
   student: { label: 'Diák', price: 1900 },
@@ -47,11 +59,13 @@ const resources = {
       ['id', 'ID'],
       ['name', 'Név'],
       ['description', 'Leírás'],
+      ['image_url', 'Film képe'],
     ],
-    emptyForm: { name: '', description: '' },
+    emptyForm: { name: '', description: '', image_url: '' },
     fields: [
       ['name', 'Film neve', 'text'],
       ['description', 'Leírás', 'textarea'],
+      ['image_url', 'Film képe URL vagy feltöltött kép', 'text'],
     ],
     search: {
       placeholder: 'Keresés film címe vagy leírása alapján, pl. Dune...',
@@ -134,8 +148,26 @@ function getValue(row, path) {
   return path.split('.').reduce((value, key) => value?.[key], row);
 }
 
+function isMovieImageField(key) {
+  return ['image_url', 'imageUrl', 'image', 'poster_url', 'posterUrl', 'poster'].includes(key);
+}
+
 function normalizeSearchText(value) {
   return String(value ?? '').toLowerCase().trim();
+}
+
+function normalizeMovieTitle(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function getMoviePosterByTitle(movie) {
+  const title = normalizeMovieTitle(movie?.name || movie?.title || movie?.film || '');
+  if (!title) return '';
+  return moviePosterByTitle.find((poster) => poster.titles.some((name) => title.includes(normalizeMovieTitle(name))))?.src || '';
 }
 
 function normalizeId(value) {
@@ -144,6 +176,40 @@ function normalizeId(value) {
 
 function idsEqual(left, right) {
   return normalizeId(left) !== '' && normalizeId(left) === normalizeId(right);
+}
+
+function getMovieImageUrl(movie) {
+  const explicitImage = String(
+    movie?.image_url
+    || movie?.imageUrl
+    || movie?.image
+    || movie?.poster_url
+    || movie?.posterUrl
+    || movie?.poster
+    || movie?.logo_url
+    || movie?.logoUrl
+    || movie?.logo
+    || ''
+  ).trim();
+
+  return explicitImage || getMoviePosterByTitle(movie);
+}
+
+function getMovieInitials(movie) {
+  const name = String(movie?.name || movie?.title || 'JM').trim();
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'JM';
+}
+
+function moviePayloadForBackend(payload) {
+  return {
+    name: payload.name,
+    description: payload.description,
+  };
 }
 
 function filterRows(rows, searchText, fields) {
@@ -256,6 +322,7 @@ function rememberLocalMovie(movie) {
     id: movie.id ?? movie.movie_id ?? `local-movie-${Date.now()}`,
     name: movie.name || movie.title || 'Új film',
     description: movie.description || '',
+    image_url: getMovieImageUrl(movie),
     localOnly: movie.localOnly || !movie.id,
   };
   saveLocalMovies(mergeById(saved, [normalized]));
@@ -408,9 +475,14 @@ function getScheduleInfo(screeningId, meta = getScheduleMeta()) {
 
 const publicDemoData = {
   movies: [
-    { id: 9001, name: 'Dune: Második rész', description: 'Sci-fi kalandfilm, homokféreggel és látványos csatákkal.' },
-    { id: 9002, name: 'Avatar', description: 'Látványos fantasy/sci-fi film családoknak és fiataloknak.' },
-    { id: 9003, name: 'Magyar vígjáték', description: 'Könnyed esti film a teremteszteléshez.' },
+    { id: 9001, name: 'Dune: Második rész', description: 'Sci-fi kalandfilm, homokféreggel és látványos csatákkal.', image_url: '/movie-posters/dune.jpg' },
+    { id: 9002, name: 'Avatar', description: 'Látványos fantasy/sci-fi film családoknak és fiataloknak.', image_url: '/movie-posters/avatar.jpg' },
+    { id: 9003, name: 'Batman', description: 'Akciófilm a sötét lovaggal.', image_url: '/movie-posters/batman.jpg' },
+    { id: 9004, name: 'Banana Joe', description: 'Klasszikus vígjáték.', image_url: '/movie-posters/banana-joe.jpg' },
+    { id: 9005, name: 'Boomerang', description: 'Romantikus vígjáték.', image_url: '/movie-posters/boomerang.jpg' },
+    { id: 9006, name: 'Forever My Girl', description: 'Romantikus dráma.', image_url: '/movie-posters/forever-my-girl.jpg' },
+    { id: 9007, name: 'Superman', description: 'Szuperhősfilm.', image_url: '/movie-posters/superman.jpg' },
+    { id: 9008, name: 'Ovizsaru', description: 'Klasszikus családi vígjáték.', image_url: '/movie-posters/ovizsaru.jpg' },
   ],
   halls: [
     { id: 9101, name: '1. terem', capacity: 50 },
@@ -418,8 +490,13 @@ const publicDemoData = {
   ],
   screenings: [
     { id: 9201, time: 1600, place: '1. terem', movie_id: 9001, hall_id: 9101 },
-    { id: 9202, time: 1830, place: 'VIP terem', movie_id: 9001, hall_id: 9102 },
-    { id: 9203, time: 2000, place: '1. terem', movie_id: 9002, hall_id: 9101 },
+    { id: 9202, time: 1830, place: 'VIP terem', movie_id: 9002, hall_id: 9102 },
+    { id: 9203, time: 2000, place: '1. terem', movie_id: 9003, hall_id: 9101 },
+    { id: 9204, time: 1730, place: 'VIP terem', movie_id: 9004, hall_id: 9102 },
+    { id: 9205, time: 1930, place: '1. terem', movie_id: 9005, hall_id: 9101 },
+    { id: 9206, time: 2100, place: 'VIP terem', movie_id: 9006, hall_id: 9102 },
+    { id: 9207, time: 2200, place: '1. terem', movie_id: 9007, hall_id: 9101 },
+    { id: 9208, time: 1845, place: '1. terem', movie_id: 9008, hall_id: 9101 },
   ],
 };
 
@@ -658,6 +735,7 @@ function makeTicketOrder({
     cashierName,
     screeningId: selectedScreening.id,
     movieName: selectedMovie.name,
+    movieLogoUrl: getMovieImageUrl(selectedMovie),
     hallId: selectedHall.id,
     hallName: selectedHall.name,
     place: selectedScreening.place,
@@ -677,6 +755,29 @@ function makeTicketOrder({
 function Message({ message, type = 'info' }) {
   if (!message) return null;
   return <div className={`message ${type}`}>{message}</div>;
+}
+
+function MoviePoster({ movie, size = 'card' }) {
+  const [failed, setFailed] = useState(false);
+  const imageUrl = getMovieImageUrl(movie);
+
+  if (!imageUrl || failed) {
+    return (
+      <div className={`movie-poster movie-poster-${size} movie-poster-fallback`} aria-label={`${movie?.name || 'Film'} film képének helye`}>
+        <span>{getMovieInitials(movie)}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      className={`movie-poster movie-poster-${size}`}
+      src={imageUrl}
+      alt={`${movie?.name || 'Film'} képe / plakátképe`}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 
@@ -866,13 +967,18 @@ function PublicCatalog({ onGoLogin }) {
               const hall = getScreeningHall(screening, data.halls);
               const availability = getAvailabilitySummary(screening, hall, reservations, hallConfigs);
               return (
-                <article key={screening.id} className={`screening-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
-                  <div className="card-title-row"><h3>{movie?.name}</h3><span className={`badge ${availability.soldOut ? 'danger-badge' : availability.almostSoldOut ? 'warning-badge' : ''}`}>{availability.soldOut ? 'Elfogyott' : `${getScreeningDate(screening, scheduleMeta)} · ${timeToText(screening.time)}`}</span></div>
+                <article key={screening.id} className={`screening-card movie-ticket-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
+                  <div className="movie-card-layout">
+                    <MoviePoster movie={movie} />
+                    <div className="movie-card-body">
+                      <div className="card-title-row"><h3>{movie?.name}</h3><span className={`badge ${availability.soldOut ? 'danger-badge' : availability.almostSoldOut ? 'warning-badge' : ''}`}>{availability.soldOut ? 'Elfogyott' : `${getScreeningDate(screening, scheduleMeta)} · ${timeToText(screening.time)}`}</span></div>
                   <p className="muted">{movie?.description}</p>
                   {screening.autoCreatedForMovie && <p className="muted"><strong>Automatikus vetítés:</strong> ez a film adminban lett létrehozva, ezért a frontend foglalható műsorba tette. Pontos időpontot az Admin / Showtime ütemezésben adhatsz meg.</p>}
                   <p><strong>Terem:</strong> {hall?.name || screening.place} · <strong>Szabad hely:</strong> {availability.free} / {availability.capacity}</p>
                   <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
                   <button className="primary" disabled={availability.soldOut} onClick={() => setSelectedScreeningId(screening.id)}>{availability.soldOut ? 'Nincs több szék' : 'Vendégként erre veszek jegyet'}</button>
+                    </div>
+                  </div>
                 </article>
               );
             })}
@@ -880,7 +986,13 @@ function PublicCatalog({ onGoLogin }) {
           </section>
           {selectedScreening && selectedHall && selectedMovie && (
             <section className="card nested-card">
-              <h3>Vendég vásárlás: {selectedMovie.name} · {getScreeningDate(selectedScreening, scheduleMeta)} {timeToText(selectedScreening.time)}</h3>
+              <div className="booking-movie-header">
+                <MoviePoster movie={selectedMovie} size="detail" />
+                <div>
+                  <h3>Vendég vásárlás: {selectedMovie.name} · {getScreeningDate(selectedScreening, scheduleMeta)} {timeToText(selectedScreening.time)}</h3>
+                  <p className="muted">Itt tényleges képként jelenik meg az adminban megadott filmkép.</p>
+                </div>
+              </div>
               <div className="grid-form">
                 <label>Név<input value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} placeholder="Vendég neve" /></label>
                 <label>E-mail cím<input type="email" required value={guest.email} onChange={(e) => setGuest({ ...guest, email: e.target.value })} /></label>
@@ -1071,6 +1183,14 @@ function DataTable({ columns, rows, actions }) {
             <tr key={row.id ?? row.code}>
               {columns.map(([key]) => {
                 const value = getValue(row, key);
+                if (isMovieImageField(key)) {
+                  return (
+                    <td key={key}>
+                      <MoviePoster movie={row} size="table" />
+                      {value ? <span className="image-url-text">Film képe beállítva</span> : <span className="image-url-text muted">Nincs kép megadva</span>}
+                    </td>
+                  );
+                }
                 return <td key={key}>{typeof value === 'boolean' ? (value ? 'igen' : 'nem') : value ?? '-'}</td>;
               })}
               {actions && <td className="actions">{actions(row)}</td>}
@@ -1447,17 +1567,22 @@ function BookingPage({ auth }) {
               const info = getScheduleInfo(screening.id, scheduleMeta);
 
               return (
-                <article key={screening.id} className={`screening-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
-                  <div className="card-title-row">
-                    <h3>{movie?.name || `Film #${screening.movie_id}`}</h3>
-                    <span className={`badge ${availability.soldOut ? 'danger-badge' : availability.almostSoldOut ? 'warning-badge' : ''}`}>{availability.soldOut ? 'Elfogyott' : `${getScreeningDate(screening, scheduleMeta)} · ${timeToText(screening.time)} · ${getDayPart(screening.time)}`}</span>
-                  </div>
+                <article key={screening.id} className={`screening-card movie-ticket-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
+                  <div className="movie-card-layout">
+                    <MoviePoster movie={movie} />
+                    <div className="movie-card-body">
+                      <div className="card-title-row">
+                        <h3>{movie?.name || `Film #${screening.movie_id}`}</h3>
+                        <span className={`badge ${availability.soldOut ? 'danger-badge' : availability.almostSoldOut ? 'warning-badge' : ''}`}>{availability.soldOut ? 'Elfogyott' : `${getScreeningDate(screening, scheduleMeta)} · ${timeToText(screening.time)} · ${getDayPart(screening.time)}`}</span>
+                      </div>
                   <p className="muted">{movie?.description || 'Nincs leírás.'}</p>
                   <p><strong>Hely:</strong> {screening.place || hall?.name || '-'} · <strong>Terem:</strong> {hall?.name || '-'}</p>
                   <p><strong>Szabad hely:</strong> {availability.free} / {availability.capacity} · <strong>Foglalt:</strong> {availability.taken} · <strong>Lezárt:</strong> {availability.closed}</p>
                   <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
                   <p><strong>Teljes filmidő reklámokkal:</strong> {info.total} perc · <strong>Terem foglalva takarítással:</strong> {info.roomBlocked} perc</p>
                   <button className="primary" disabled={availability.soldOut} onClick={() => selectScreening(screening)}>{availability.soldOut ? 'Nincs több szék' : 'Erre foglalok / vásárolok'}</button>
+                    </div>
+                  </div>
                 </article>
               );
             })}
@@ -1465,9 +1590,15 @@ function BookingPage({ auth }) {
 
           {selectedScreening && selectedHall && (
             <section className="card">
-              <div className="card-title-row">
-                <h3>Jegyfoglalás / jegyvásárlás: {selectedMovie?.name} · {getScreeningDate(selectedScreening, scheduleMeta)} {timeToText(selectedScreening.time)}</h3>
-                <span className="badge">Max. teremkapacitás: {MAX_HALL_CAPACITY}</span>
+              <div className="booking-movie-header">
+                <MoviePoster movie={selectedMovie} size="detail" />
+                <div className="booking-movie-title">
+                  <div className="card-title-row">
+                    <h3>Jegyfoglalás / jegyvásárlás: {selectedMovie?.name} · {getScreeningDate(selectedScreening, scheduleMeta)} {timeToText(selectedScreening.time)}</h3>
+                    <span className="badge">Max. teremkapacitás: {MAX_HALL_CAPACITY}</span>
+                  </div>
+                  <p className="muted">Itt tényleges képként jelenik meg az adminban megadott filmkép.</p>
+                </div>
               </div>
 
               <div className="grid-form">
@@ -1998,6 +2129,23 @@ function AdminPanel({ auth }) {
     loadRows();
   }, [active, config]);
 
+  function handleMovieImageFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type?.startsWith('image/')) {
+      setError('Csak képfájl választható ki a film képéhez.');
+      event.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm((current) => ({ ...current, image_url: String(reader.result || '') }));
+      setMessage('A film képe betöltve. Mentés után a felhasználói foglalásnál is ez a kép jelenik meg.');
+    };
+    reader.onerror = () => setError('Nem sikerült beolvasni a képet.');
+    reader.readAsDataURL(file);
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError('');
@@ -2012,8 +2160,10 @@ function AdminPanel({ auth }) {
 
       const method = editingId ? 'PUT' : 'POST';
       const path = editingId ? `${config.endpoint}${editingId}` : config.endpoint;
-      const savedItem = await apiRequest(path, { method, body: JSON.stringify(payload) }, token);
-      const localCopy = { ...payload, ...(savedItem && typeof savedItem === 'object' ? savedItem : {}), id: savedItem?.id ?? savedItem?.movie_id ?? savedItem?.screening_id ?? editingId };
+      const backendPayload = active === 'movies' ? moviePayloadForBackend(payload) : payload;
+      const savedItem = await apiRequest(path, { method, body: JSON.stringify(backendPayload) }, token);
+      const savedObject = savedItem && typeof savedItem === 'object' ? savedItem : {};
+      const localCopy = { ...savedObject, ...payload, id: savedObject.id ?? savedObject.movie_id ?? savedObject.screening_id ?? editingId ?? payload.id };
 
       if (active === 'movies') {
         rememberLocalMovie(localCopy);
@@ -2031,11 +2181,14 @@ function AdminPanel({ auth }) {
       await loadRows();
     } catch (err) {
       const payload = normalizePayload(form);
-      if (!editingId && active === 'movies') {
-        const localMovie = rememberLocalMovie({ ...payload, id: `local-movie-${Date.now()}`, localOnly: true });
+      if (active === 'movies') {
+        const localMovie = rememberLocalMovie({ ...payload, id: editingId || `local-movie-${Date.now()}`, localOnly: true });
         setRows((current) => mergeById(current, [localMovie]));
         setForm(config.emptyForm || {});
-        setMessage('A backend nem mentette el a filmet, ezért a frontend helyi filmként létrehozta. A felhasználói műsorban így is megjelenik és foglalható/vásárolható.');
+        setEditingId(null);
+        setMessage(editingId
+          ? 'A backend nem mentette el a film módosítását, ezért a frontend helyben frissítette. A film képe a felhasználói foglalásnál is látszik.'
+          : 'A backend nem mentette el a filmet, ezért a frontend helyi filmként létrehozta. A felhasználói műsorban így is megjelenik és foglalható/vásárolható.');
         return;
       }
       if (!editingId && active === 'screenings') {
@@ -2136,6 +2289,19 @@ function AdminPanel({ auth }) {
                     )}
                   </label>
                 ))}
+                {active === 'movies' && (
+                  <div className="movie-image-admin-box">
+                    <div>
+                      <strong>Film képe a foglalásnál</strong>
+                      <p className="muted small">Ide valódi filmképet/plakátképet adj meg URL-lel, vagy válassz képfájlt. Mentés után ugyanez a kép látszik a felhasználói foglalási és vásárlási kártyákon.</p>
+                      <label>
+                        Kép kiválasztása fájlból
+                        <input type="file" accept="image/*" onChange={handleMovieImageFile} />
+                      </label>
+                    </div>
+                    <MoviePoster movie={form} size="detail" />
+                  </div>
+                )}
                 <div className="form-actions">
                   <button className="primary" type="submit">{editingId ? 'Módosítás' : 'Létrehozás'}</button>
                   {editingId && <button type="button" onClick={() => { setEditingId(null); setForm(config.emptyForm || {}); }}>Mégse</button>}
@@ -2709,7 +2875,7 @@ function App() {
     setActivePage(getDefaultPageForRole(nextAuth));
   }
 
-  function logout() {
+  function imageut() {
     clearAuth();
     setAuth(null);
     setActivePage('booking');
@@ -2742,7 +2908,7 @@ function App() {
 
   return (
     <>
-      <Header auth={auth} activePage={activePage} setActivePage={setActivePage} onLogout={logout} />
+      <Header auth={auth} activePage={activePage} setActivePage={setActivePage} onLogout={imageut} />
       {page}
     </>
   );

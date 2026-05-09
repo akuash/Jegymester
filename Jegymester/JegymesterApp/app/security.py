@@ -10,13 +10,9 @@ from sqlalchemy.orm import joinedload
 from app.extensions import db
 from app.models.user import User
 
-
-token_auth = HTTPTokenAuth(
-    scheme="Bearer",
-    name="BearerAuth",
-    security_scheme_name="BearerAuth",
-    description="JWT access token. Hasznalat: Bearer <token>",
-)
+# Kompatibilis a régebbi APIFlask verziókkal is: ne használjunk name/security_scheme_name
+# paramétereket, mert ezek több környezetben TypeError-t okoznak.
+token_auth = HTTPTokenAuth(scheme="Bearer")
 
 
 def _jwt_hmac_secret() -> str:
@@ -33,7 +29,14 @@ def _jwt_hmac_secret() -> str:
     if not secret:
         return "jegymester-jwt-secret-key-2026"
 
+    # A projektben a SECRET_KEY egy .pem fájlból jön. HS256-höz nem jó közvetlenül
+    # PEM/aszimmetrikus kulcsot adni, ezért stabil HMAC titkot képezünk belőle.
     if "-----BEGIN" in secret and "-----END" in secret:
+        return sha256(secret.encode("utf-8")).hexdigest()
+
+    # HS256-höz legalább 32 bájt ajánlott. Ha ennél rövidebb a fejlesztői
+    # titok, hash-eljük, így nem lesz figyelmeztetés és stabil marad a token.
+    if len(secret.encode("utf-8")) < 32:
         return sha256(secret.encode("utf-8")).hexdigest()
 
     return secret
@@ -50,23 +53,14 @@ def generate_access_token(user: User) -> tuple[str, int]:
         "exp": now + timedelta(seconds=expires_in),
     }
 
-    token = jwt.encode(
-        payload,
-        _jwt_hmac_secret(),
-        algorithm="HS256",
-    )
-
+    token = jwt.encode(payload, _jwt_hmac_secret(), algorithm="HS256")
     return token, expires_in
 
 
 @token_auth.verify_token
 def verify_token(token: str):
     try:
-        payload = jwt.decode(
-            token,
-            _jwt_hmac_secret(),
-            algorithms=["HS256"],
-        )
+        payload = jwt.decode(token, _jwt_hmac_secret(), algorithms=["HS256"])
         user_id = int(payload["sub"])
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, KeyError, TypeError, ValueError):
         return None

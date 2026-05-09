@@ -15,3 +15,7 @@ class MovieResponseSchema(Schema):
     id = fields.Integer()
     name = fields.String()
     description = fields.String(allow_none=True)
+
+
+class ActionResponseSchema(Schema):
+    message = fields.String()

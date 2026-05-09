@@ -18,6 +18,9 @@ const RESERVATIONS_KEY = 'jegymester_reservations_v2';
 const HALL_CONFIG_KEY = 'jegymester_hall_config_v2';
 const SCHEDULE_META_KEY = 'jegymester_schedule_meta_v2';
 const PROFILE_OVERRIDES_KEY = 'jegymester_profile_overrides_v2';
+const LOCAL_MOVIES_KEY = 'jegymester_local_movies_v3';
+const LOCAL_SCREENINGS_KEY = 'jegymester_local_screenings_v3';
+const AUTO_SCREENING_ID_BASE = 8700000;
 const PUBLIC_DAYS_AHEAD = 21;
 
 const ticketCategories = {
@@ -135,6 +138,14 @@ function normalizeSearchText(value) {
   return String(value ?? '').toLowerCase().trim();
 }
 
+function normalizeId(value) {
+  return String(value ?? '').trim();
+}
+
+function idsEqual(left, right) {
+  return normalizeId(left) !== '' && normalizeId(left) === normalizeId(right);
+}
+
 function filterRows(rows, searchText, fields) {
   const query = normalizeSearchText(searchText);
 
@@ -203,6 +214,75 @@ function saveScheduleMeta(meta) {
   writeStorage(SCHEDULE_META_KEY, meta);
 }
 
+
+function getLocalMovies() {
+  return readStorage(LOCAL_MOVIES_KEY, []);
+}
+
+function notifyLocalCatalogChanged() {
+  window.dispatchEvent(new Event('jegymester-local-catalog-changed'));
+}
+
+function saveLocalMovies(movies) {
+  writeStorage(LOCAL_MOVIES_KEY, movies);
+  notifyLocalCatalogChanged();
+}
+
+function getLocalScreenings() {
+  return readStorage(LOCAL_SCREENINGS_KEY, []);
+}
+
+function saveLocalScreenings(screenings) {
+  writeStorage(LOCAL_SCREENINGS_KEY, screenings);
+  notifyLocalCatalogChanged();
+}
+
+function mergeById(primary = [], extra = []) {
+  const map = new Map();
+  [...primary, ...extra].forEach((item) => {
+    if (!item) return;
+    const id = item.id ?? item.movie_id ?? item.hall_id;
+    if (id === undefined || id === null || id === '') return;
+    map.set(String(id), { ...(map.get(String(id)) || {}), ...item });
+  });
+  return Array.from(map.values());
+}
+
+function rememberLocalMovie(movie) {
+  if (!movie) return null;
+  const saved = getLocalMovies();
+  const normalized = {
+    ...movie,
+    id: movie.id ?? movie.movie_id ?? `local-movie-${Date.now()}`,
+    name: movie.name || movie.title || 'Új film',
+    description: movie.description || '',
+    localOnly: movie.localOnly || !movie.id,
+  };
+  saveLocalMovies(mergeById(saved, [normalized]));
+  return normalized;
+}
+
+function forgetLocalMovie(movieId) {
+  if (!movieId) return;
+  saveLocalMovies(getLocalMovies().filter((movie) => String(movie.id) !== String(movieId)));
+  saveLocalScreenings(getLocalScreenings().filter((screening) => String(screening.movie_id) !== String(movieId)));
+}
+
+function rememberLocalScreening(screening) {
+  if (!screening) return null;
+  const normalized = {
+    ...screening,
+    id: screening.id ?? `local-screening-${Date.now()}`,
+  };
+  saveLocalScreenings(mergeById(getLocalScreenings(), [normalized]));
+  return normalized;
+}
+
+function forgetLocalScreening(screeningId) {
+  if (!screeningId) return;
+  saveLocalScreenings(getLocalScreenings().filter((screening) => String(screening.id) !== String(screeningId)));
+}
+
 function isCashier(auth) {
   const role = getRole(auth);
   return role === 'penztaros' || role === 'adminisztrator';
@@ -217,11 +297,13 @@ function isRegularUser(auth) {
 }
 
 function getScreeningMovie(screening, movies = []) {
-  return screening.movie || movies.find((movie) => Number(movie.id) === Number(screening.movie_id)) || null;
+  const movieId = screening?.movie_id ?? screening?.movie?.id ?? screening?.movie?.movie_id;
+  return screening?.movie || movies.find((movie) => idsEqual(movie.id ?? movie.movie_id, movieId)) || null;
 }
 
 function getScreeningHall(screening, halls = []) {
-  return screening.hall || halls.find((hall) => Number(hall.id) === Number(screening.hall_id)) || null;
+  const hallId = screening?.hall_id ?? screening?.hall?.id ?? screening?.hall?.hall_id;
+  return screening?.hall || halls.find((hall) => idsEqual(hall.id ?? hall.hall_id, hallId)) || null;
 }
 
 function timeToText(time) {
@@ -261,7 +343,7 @@ function generateSeats(capacity) {
 
 function getTakenSeats(screeningId, reservations = getReservations()) {
   return reservations
-    .filter((reservation) => Number(reservation.screeningId) === Number(screeningId) && reservation.status !== 'cancelled')
+    .filter((reservation) => idsEqual(reservation.screeningId, screeningId) && reservation.status !== 'cancelled')
     .flatMap((reservation) => reservation.seats || []);
 }
 
@@ -368,22 +450,50 @@ function normalizeCatalogData(rawData = {}) {
   const movies = asArray(rawData.movies);
   const halls = asArray(rawData.halls);
   const screenings = asArray(rawData.screenings);
+  const baseMovies = movies.length ? movies : publicDemoData.movies;
+  const baseHalls = halls.length ? halls : publicDemoData.halls;
+  const baseScreenings = screenings.length ? screenings : publicDemoData.screenings;
 
   return {
-    movies: movies.length ? movies : publicDemoData.movies,
-    halls: halls.length ? halls : publicDemoData.halls,
-    screenings: screenings.length ? screenings : publicDemoData.screenings,
+    movies: mergeById(baseMovies, getLocalMovies()),
+    halls: baseHalls,
+    screenings: mergeById(baseScreenings, getLocalScreenings()),
   };
+}
+
+function createAutoScreeningsForMovies(catalog) {
+  const halls = catalog.halls.length ? catalog.halls : publicDemoData.halls;
+  const firstHall = halls[0] || { id: 9101, name: '1. terem', capacity: 50 };
+  const usedMovieIds = new Set(catalog.screenings.map((screening) => String(screening.movie_id)));
+  const baseTimes = [1400, 1600, 1800, 2000];
+
+  const generated = catalog.movies
+    .filter((movie) => movie?.id !== undefined && movie?.id !== null && !usedMovieIds.has(String(movie.id)))
+    .map((movie, index) => ({
+      id: AUTO_SCREENING_ID_BASE + Math.abs(Number(movie.id) || index + 1),
+      movie_id: movie.id,
+      hall_id: firstHall.id,
+      place: firstHall.name || '1. terem',
+      time: baseTimes[index % baseTimes.length],
+      autoCreatedForMovie: true,
+    }));
+
+  return generated.length
+    ? { ...catalog, screenings: [...catalog.screenings, ...generated] }
+    : catalog;
 }
 
 function syntheticScreeningId(screening, dayIndex, position) {
   const base = Number(screening?.id);
   if (Number.isFinite(base)) return base * 1000 + dayIndex * 50 + position;
-  return 9000000 + dayIndex * 100 + position;
+  const fallback = String(screening?.id || `${screening?.movie_id || 'x'}-${position}`)
+    .split('')
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return 9000000 + fallback * 100 + dayIndex * 50 + position;
 }
 
 function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
-  const catalog = normalizeCatalogData(rawData);
+  const catalog = createAutoScreeningsForMovies(normalizeCatalogData(rawData));
   const sourceScreenings = catalog.screenings.length ? catalog.screenings : publicDemoData.screenings;
 
   const expandedScreenings = Array.from({ length: Math.max(1, Number(days) || 1) }, (_, dayIndex) => {
@@ -400,6 +510,40 @@ function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
     ...catalog,
     screenings: expandedScreenings,
   };
+}
+
+function dateHashForScreeningId(dateValue) {
+  return String(dateValue || todayDateValue())
+    .split('')
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+}
+
+function uniqueScreeningTemplates(screenings = []) {
+  const seen = new Set();
+  return screenings.filter((screening) => {
+    const templateId = screening.originalScreeningId ?? screening.id;
+    const key = normalizeId(templateId);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function screeningsCoveringDate(catalog, targetDate) {
+  if (!targetDate) return catalog.screenings;
+  const hasTargetDate = catalog.screenings.some((screening) => getScreeningDate(screening) === targetDate);
+  if (hasTargetDate) return catalog.screenings;
+
+  const templates = uniqueScreeningTemplates(catalog.screenings.length ? catalog.screenings : publicDemoData.screenings);
+  const dateHash = dateHashForScreeningId(targetDate);
+  const generatedForDate = templates.map((screening, index) => ({
+    ...screening,
+    id: syntheticScreeningId(screening, dateHash, index),
+    originalScreeningId: screening.originalScreeningId ?? screening.id,
+    date: targetDate,
+  }));
+
+  return [...catalog.screenings, ...generatedForDate];
 }
 
 function availableScheduleDates(days = PUBLIC_DAYS_AHEAD) {
@@ -476,7 +620,7 @@ async function loadCatalogData(token = null, useDemoOnError = false) {
       return {
         data: normalizeCatalogData(publicDemoData),
         usedDemo: true,
-        error: 'A backend jelenleg tokenhez köti a filmek/vetítések listázását, ezért a bejelentkezés nélküli nézet demó műsorral működik. A vendég jegyvásárlás ettől függetlenül működik a frontenden, e-mail és telefonszám megadásával.',
+        error: 'A backend jelenleg tokenhez köti a filmek/vetítések listázását, ezért a bejelentkezés nélküli nézet demó műsorral és az admin által ebben a böngészőben létrehozott filmekkel működik. A vendég jegyvásárlás ettől függetlenül használható.',
       };
     }
     throw err;
@@ -551,7 +695,7 @@ function PublicCatalog({ onGoLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const selectedScreening = data.screenings.find((screening) => Number(screening.id) === Number(selectedScreeningId));
+  const selectedScreening = data.screenings.find((screening) => idsEqual(screening.id, selectedScreeningId));
   const selectedHall = selectedScreening ? getScreeningHall(selectedScreening, data.halls) : null;
   const selectedMovie = selectedScreening ? getScreeningMovie(selectedScreening, data.movies) : null;
   const selectedHallConfig = selectedHall ? hallConfigs[selectedHall.id] || {} : {};
@@ -565,10 +709,11 @@ function PublicCatalog({ onGoLogin }) {
   }, [data.screenings, data.halls]);
 
   const scheduleDates = useMemo(() => availableScheduleDates(), []);
+  const visibleScreenings = useMemo(() => screeningsCoveringDate(data, filters.date), [data, filters.date]);
 
   const filteredScreenings = useMemo(() => {
     const movieQuery = normalizeSearchText(filters.movie);
-    return data.screenings.filter((screening) => {
+    return visibleScreenings.filter((screening) => {
       const movie = getScreeningMovie(screening, data.movies);
       const hall = getScreeningHall(screening, data.halls);
       const movieText = normalizeSearchText(`${movie?.name || ''} ${movie?.description || ''}`);
@@ -580,7 +725,7 @@ function PublicCatalog({ onGoLogin }) {
       if (filters.place && placeText !== filters.place) return false;
       return true;
     });
-  }, [data.screenings, data.movies, data.halls, filters, scheduleMeta]);
+  }, [visibleScreenings, data.movies, data.halls, filters, scheduleMeta]);
 
   async function loadData() {
     setLoading(true);
@@ -601,7 +746,14 @@ function PublicCatalog({ onGoLogin }) {
       setHallConfigs(getHallConfigs());
       setScheduleMeta(getScheduleMeta());
     }, 5000);
-    return () => window.clearInterval(interval);
+    function refreshLocalCatalog() {
+      setData(buildDailyCatalog(normalizeCatalogData(publicDemoData)));
+    }
+    window.addEventListener('jegymester-local-catalog-changed', refreshLocalCatalog);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('jegymester-local-catalog-changed', refreshLocalCatalog);
+    };
   }, []);
 
   useEffect(() => {
@@ -717,6 +869,7 @@ function PublicCatalog({ onGoLogin }) {
                 <article key={screening.id} className={`screening-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
                   <div className="card-title-row"><h3>{movie?.name}</h3><span className={`badge ${availability.soldOut ? 'danger-badge' : availability.almostSoldOut ? 'warning-badge' : ''}`}>{availability.soldOut ? 'Elfogyott' : `${getScreeningDate(screening, scheduleMeta)} · ${timeToText(screening.time)}`}</span></div>
                   <p className="muted">{movie?.description}</p>
+                  {screening.autoCreatedForMovie && <p className="muted"><strong>Automatikus vetítés:</strong> ez a film adminban lett létrehozva, ezért a frontend foglalható műsorba tette. Pontos időpontot az Admin / Showtime ütemezésben adhatsz meg.</p>}
                   <p><strong>Terem:</strong> {hall?.name || screening.place} · <strong>Szabad hely:</strong> {availability.free} / {availability.capacity}</p>
                   <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
                   <button className="primary" disabled={availability.soldOut} onClick={() => setSelectedScreeningId(screening.id)}>{availability.soldOut ? 'Nincs több szék' : 'Vendégként erre veszek jegyet'}</button>
@@ -979,7 +1132,7 @@ function BookingPage({ auth }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const selectedScreening = data.screenings.find((screening) => Number(screening.id) === Number(selectedScreeningId));
+  const selectedScreening = data.screenings.find((screening) => idsEqual(screening.id, selectedScreeningId));
   const selectedHall = selectedScreening ? getScreeningHall(selectedScreening, data.halls) : null;
   const selectedMovie = selectedScreening ? getScreeningMovie(selectedScreening, data.movies) : null;
   const selectedHallConfig = selectedHall ? hallConfigs[selectedHall.id] || {} : {};
@@ -988,7 +1141,7 @@ function BookingPage({ auth }) {
   const total = calculateTotal(category, selectedSeats, selectedHallConfig);
 
   const myReservations = reservations.filter(
-    (reservation) => Number(reservation.userId) === Number(auth.user?.id) && reservation.status !== 'cancelled'
+    (reservation) => idsEqual(reservation.userId, auth.user?.id) && reservation.status !== 'cancelled'
   );
 
   const places = useMemo(() => {
@@ -997,11 +1150,12 @@ function BookingPage({ auth }) {
   }, [data.screenings, data.halls]);
 
   const scheduleDates = useMemo(() => availableScheduleDates(), []);
+  const visibleScreenings = useMemo(() => screeningsCoveringDate(data, filters.date), [data, filters.date]);
 
   const filteredScreenings = useMemo(() => {
     const movieQuery = normalizeSearchText(filters.movie);
 
-    return data.screenings.filter((screening) => {
+    return visibleScreenings.filter((screening) => {
       const movie = getScreeningMovie(screening, data.movies);
       const hall = getScreeningHall(screening, data.halls);
       const movieText = normalizeSearchText(`${movie?.name || ''} ${movie?.description || ''}`);
@@ -1015,7 +1169,7 @@ function BookingPage({ auth }) {
 
       return true;
     });
-  }, [data.screenings, data.movies, data.halls, filters, scheduleMeta]);
+  }, [visibleScreenings, data.movies, data.halls, filters, scheduleMeta]);
 
   async function loadHomeData() {
     setError('');
@@ -1031,7 +1185,11 @@ function BookingPage({ auth }) {
       setHallConfigs(getHallConfigs());
       setScheduleMeta(getScheduleMeta());
     } catch (err) {
-      setError(err.message);
+      setData(buildDailyCatalog(normalizeCatalogData(publicDemoData)));
+      setReservations(getReservations());
+      setHallConfigs(getHallConfigs());
+      setScheduleMeta(getScheduleMeta());
+      setError(`${err.message}. A frontend helyi/publikus műsorral fut tovább, ezért az adminban létrehozott helyi filmek így is megjelennek.`);
     } finally {
       setLoading(false);
     }
@@ -1054,12 +1212,21 @@ function BookingPage({ auth }) {
         setHallConfigs(getHallConfigs());
         setScheduleMeta(getScheduleMeta());
       }
+      if ([LOCAL_MOVIES_KEY, LOCAL_SCREENINGS_KEY].includes(event.key)) {
+        loadHomeData();
+      }
+    }
+
+    function onLocalCatalogChanged() {
+      loadHomeData();
     }
 
     window.addEventListener('storage', onStorage);
+    window.addEventListener('jegymester-local-catalog-changed', onLocalCatalogChanged);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('jegymester-local-catalog-changed', onLocalCatalogChanged);
     };
   }, []);
 
@@ -1799,7 +1966,14 @@ function AdminPanel({ auth }) {
     setLoading(true);
     try {
       const data = await apiRequest(config.endpoint, {}, token);
-      setRows(Array.isArray(data) ? data : []);
+      const serverRows = Array.isArray(data) ? data : [];
+      if (active === 'movies') {
+        setRows(mergeById(serverRows, getLocalMovies()));
+      } else if (active === 'screenings') {
+        setRows(mergeById(serverRows, getLocalScreenings()));
+      } else {
+        setRows(serverRows);
+      }
     } catch (err) {
       setError(err.message);
       setRows([]);
@@ -1838,12 +2012,39 @@ function AdminPanel({ auth }) {
 
       const method = editingId ? 'PUT' : 'POST';
       const path = editingId ? `${config.endpoint}${editingId}` : config.endpoint;
-      await apiRequest(path, { method, body: JSON.stringify(payload) }, token);
-      setMessage(editingId ? 'Sikeres módosítás.' : 'Sikeres létrehozás.');
+      const savedItem = await apiRequest(path, { method, body: JSON.stringify(payload) }, token);
+      const localCopy = { ...payload, ...(savedItem && typeof savedItem === 'object' ? savedItem : {}), id: savedItem?.id ?? savedItem?.movie_id ?? savedItem?.screening_id ?? editingId };
+
+      if (active === 'movies') {
+        rememberLocalMovie(localCopy);
+      }
+
+      if (active === 'screenings') {
+        rememberLocalScreening(localCopy);
+      }
+
+      setMessage(active === 'movies'
+        ? (editingId ? 'Film módosítva. A felhasználói foglalás/vásárlás listában is frissül.' : 'Film létrehozva. A felhasználói oldalon is megjelenik, automatikus vetítéssel vagy a Showtime ütemezésben létrehozott vetítéssel.')
+        : editingId ? 'Sikeres módosítás.' : 'Sikeres létrehozás.');
       setForm(config.emptyForm || {});
       setEditingId(null);
       await loadRows();
     } catch (err) {
+      const payload = normalizePayload(form);
+      if (!editingId && active === 'movies') {
+        const localMovie = rememberLocalMovie({ ...payload, id: `local-movie-${Date.now()}`, localOnly: true });
+        setRows((current) => mergeById(current, [localMovie]));
+        setForm(config.emptyForm || {});
+        setMessage('A backend nem mentette el a filmet, ezért a frontend helyi filmként létrehozta. A felhasználói műsorban így is megjelenik és foglalható/vásárolható.');
+        return;
+      }
+      if (!editingId && active === 'screenings') {
+        const localScreening = rememberLocalScreening({ ...payload, id: `local-screening-${Date.now()}`, localOnly: true });
+        setRows((current) => mergeById(current, [localScreening]));
+        setForm(config.emptyForm || {});
+        setMessage('A backend nem mentette el a vetítést, ezért a frontend helyi vetítésként létrehozta. A felhasználói műsorban így is megjelenik.');
+        return;
+      }
       setError(err.message);
     }
   }
@@ -1857,6 +2058,8 @@ function AdminPanel({ auth }) {
     setMessage('');
     try {
       await apiRequest(`${config.endpoint}${id}`, { method: 'DELETE' }, token);
+      if (active === 'movies') forgetLocalMovie(id);
+      if (active === 'screenings') forgetLocalScreening(id);
       setMessage('Sikeres törlés.');
       await loadRows();
     } catch (err) {
@@ -1991,7 +2194,18 @@ function ScheduleEditor({ auth }) {
   const [data, setData] = useState({ movies: [], halls: [], screenings: [] });
   const [meta, setMeta] = useState(getScheduleMeta());
   const [selectedId, setSelectedId] = useState('');
-  const [form, setForm] = useState(defaultScheduleMeta);
+  const [form, setForm] = useState({ ...defaultScheduleMeta, date: todayDateValue() });
+  const [newForm, setNewForm] = useState({
+    movie_id: '',
+    hall_id: '',
+    place: '',
+    date: todayDateValue(),
+    time: '1800',
+    movieRuntime: defaultScheduleMeta.movieRuntime,
+    ads: defaultScheduleMeta.ads,
+    trailers: defaultScheduleMeta.trailers,
+    cleaning: defaultScheduleMeta.cleaning,
+  });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -2002,7 +2216,8 @@ function ScheduleEditor({ auth }) {
         apiRequest('/hall/', {}, auth.token),
         apiRequest('/screening/', {}, auth.token),
       ]);
-      setData({ movies, halls, screenings });
+      setData(normalizeCatalogData({ movies, halls, screenings }));
+      setError('');
     } catch (err) {
       setError(err.message);
     }
@@ -2014,8 +2229,151 @@ function ScheduleEditor({ auth }) {
 
   useEffect(() => {
     if (!selectedId) return;
-    setForm({ ...defaultScheduleMeta, ...(meta[selectedId] || {}) });
+    setForm({ ...defaultScheduleMeta, date: todayDateValue(), ...(meta[selectedId] || {}) });
   }, [selectedId, meta]);
+
+  function normalizeTimeValue(value) {
+    const digits = String(value || '').replace(/\D/g, '').padStart(4, '0').slice(-4);
+    const hour = Math.min(23, Number(digits.slice(0, 2)) || 0);
+    const minute = Math.min(59, Number(digits.slice(2, 4)) || 0);
+    return hour * 100 + minute;
+  }
+
+  function getScheduleEnd(dateValue, timeValue, scheduleInfo) {
+    const start = getScreeningDateTimeFromParts(dateValue, timeValue);
+    const end = new Date(start.getTime() + Number(scheduleInfo.roomBlocked || 0) * 60 * 1000);
+    return { start, end };
+  }
+
+  function findHallOverlaps({ hallId, date, time, scheduleInfo, ignoreId }) {
+    const target = getScheduleEnd(date, time, scheduleInfo);
+    if (Number.isNaN(target.start.getTime()) || Number.isNaN(target.end.getTime())) return [];
+
+    return data.screenings.filter((screening) => {
+      if (ignoreId && idsEqual(screening.id, ignoreId)) return false;
+      if (!idsEqual(screening.hall_id, hallId)) return false;
+
+      const screeningDate = getScreeningDate(screening, meta);
+      if (screeningDate !== date) return false;
+
+      const existingInfo = getScheduleInfo(screening.id, meta);
+      const existing = getScheduleEnd(screeningDate, screening.time, existingInfo);
+      return target.start < existing.end && target.end > existing.start;
+    });
+  }
+
+  function schedulePayloadFromForm(values) {
+    return {
+      movieRuntime: Number(values.movieRuntime || 0),
+      ads: Number(values.ads || 0),
+      trailers: Number(values.trailers || 0),
+      cleaning: Number(values.cleaning || 0),
+    };
+  }
+
+  async function createShowtime(event) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+
+    const movieId = Number(newForm.movie_id);
+    const hallId = Number(newForm.hall_id);
+    const movie = data.movies.find((item) => idsEqual(item.id ?? item.movie_id, movieId));
+    const hall = data.halls.find((item) => idsEqual(item.id ?? item.hall_id, hallId));
+    const time = normalizeTimeValue(newForm.time);
+    const scheduleInfo = getScheduleInfo('new', { new: schedulePayloadFromForm(newForm) });
+
+    if (!movieId || !movie) {
+      setError('Válassz filmet. Az Admin / Filmek fülön létrehozott filmek itt automatikusan megjelennek.');
+      return;
+    }
+    if (!hallId || !hall) {
+      setError('Válassz termet.');
+      return;
+    }
+    if (!newForm.date) {
+      setError('Adj meg vetítési dátumot.');
+      return;
+    }
+
+    const overlaps = findHallOverlaps({ hallId, date: newForm.date, time, scheduleInfo });
+    if (overlaps.length) {
+      setError('Ebben a teremben erre az időszakra már van vetítés. Válassz másik időpontot vagy másik termet.');
+      return;
+    }
+
+    try {
+      const created = await apiRequest('/screening/', {
+        method: 'POST',
+        body: JSON.stringify({
+          movie_id: movieId,
+          hall_id: hallId,
+          place: newForm.place || hall.name || 'Mozi terem',
+          time,
+        }),
+      }, auth.token);
+
+      const createdWithFallback = rememberLocalScreening(created || {
+        id: `local-showtime-${Date.now()}`,
+        movie_id: movieId,
+        hall_id: hallId,
+        place: newForm.place || hall.name || 'Mozi terem',
+        time,
+      });
+
+      const createdId = createdWithFallback?.id || created?.id;
+      if (createdId) {
+        const nextMeta = {
+          ...meta,
+          [createdId]: {
+            date: newForm.date,
+            ...schedulePayloadFromForm(newForm),
+          },
+        };
+        saveScheduleMeta(nextMeta);
+        setMeta(nextMeta);
+      }
+
+      setMessage(`Új showtime létrehozva: ${movie.name} · ${newForm.date} · ${timeToText(time)}.`);
+      setNewForm({
+        movie_id: '',
+        hall_id: '',
+        place: '',
+        date: todayDateValue(),
+        time: '1800',
+        movieRuntime: defaultScheduleMeta.movieRuntime,
+        ads: defaultScheduleMeta.ads,
+        trailers: defaultScheduleMeta.trailers,
+        cleaning: defaultScheduleMeta.cleaning,
+      });
+      await loadData();
+    } catch (err) {
+      const fallbackScreening = rememberLocalScreening({
+        id: `local-showtime-${Date.now()}`,
+        movie_id: movieId,
+        hall_id: hallId,
+        place: newForm.place || hall?.name || 'Mozi terem',
+        time,
+        localOnly: true,
+      });
+      const fallbackId = fallbackScreening?.id;
+      if (fallbackId) {
+        const nextMeta = {
+          ...meta,
+          [fallbackId]: {
+            date: newForm.date,
+            ...schedulePayloadFromForm(newForm),
+          },
+        };
+        saveScheduleMeta(nextMeta);
+        setMeta(nextMeta);
+        setMessage(`A backend nem mentette el a showtime-ot, ezért a frontend helyi vetítésként létrehozta: ${movie?.name || 'Film'} · ${newForm.date} · ${timeToText(time)}.`);
+        await loadData();
+        return;
+      }
+      setError(err.message);
+    }
+  }
 
   function saveMeta(event) {
     event.preventDefault();
@@ -2023,13 +2381,27 @@ function ScheduleEditor({ auth }) {
       setError('Válassz vetítést.');
       return;
     }
+
+    const selectedScreening = data.screenings.find((screening) => idsEqual(screening.id, selectedId));
+    const scheduleInfo = getScheduleInfo(selectedId, { [selectedId]: schedulePayloadFromForm(form) });
+    const overlaps = selectedScreening ? findHallOverlaps({
+      hallId: selectedScreening.hall_id,
+      date: form.date || todayDateValue(),
+      time: selectedScreening.time,
+      scheduleInfo,
+      ignoreId: selectedScreening.id,
+    }) : [];
+
+    if (overlaps.length) {
+      setError('A módosított vetítési idő ütközne egy másik vetítéssel ugyanabban a teremben.');
+      return;
+    }
+
     const next = {
       ...meta,
       [selectedId]: {
-        movieRuntime: Number(form.movieRuntime),
-        ads: Number(form.ads),
-        trailers: Number(form.trailers),
-        cleaning: Number(form.cleaning),
+        date: form.date || todayDateValue(),
+        ...schedulePayloadFromForm(form),
       },
     };
     saveScheduleMeta(next);
@@ -2062,8 +2434,49 @@ function ScheduleEditor({ auth }) {
       <Message message={error} type="error" />
       <Message message={message} type="success" />
       <section className="card">
-        <h3>Showtime ütemezés</h3>
-        <p className="muted">Itt állítható a vetítés dátuma, a film hossza, reklám, előzetes és takarítási idő. A backend vetítés kezdési időpontját az Admin kezelő / Vetítések táblában tudod módosítani.</p>
+        <div className="card-title-row">
+          <div>
+            <h3>Új showtime létrehozása</h3>
+            <p className="muted">Az Admin / Filmek fülön létrehozott új filmek itt választhatók ki, és ebből jön létre az új vetítés a backendben.</p>
+          </div>
+          <button type="button" onClick={loadData}>Filmek/termek frissítése</button>
+        </div>
+        <form className="grid-form" onSubmit={createShowtime}>
+          <label>
+            Film
+            <select value={newForm.movie_id} onChange={(e) => setNewForm({ ...newForm, movie_id: e.target.value })} required>
+              <option value="">Válassz filmet...</option>
+              {data.movies.map((movie) => <option key={movie.id} value={movie.id}>{movie.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Terem
+            <select
+              value={newForm.hall_id}
+              onChange={(e) => {
+                const hall = data.halls.find((item) => idsEqual(item.id ?? item.hall_id, e.target.value));
+                setNewForm({ ...newForm, hall_id: e.target.value, place: hall?.name || newForm.place });
+              }}
+              required
+            >
+              <option value="">Válassz termet...</option>
+              {data.halls.map((hall) => <option key={hall.id} value={hall.id}>{hall.name} · {Math.min(Number(hall.capacity) || MAX_HALL_CAPACITY, MAX_HALL_CAPACITY)} hely</option>)}
+            </select>
+          </label>
+          <label>Helyszín / teremnév<input value={newForm.place} onChange={(e) => setNewForm({ ...newForm, place: e.target.value })} placeholder="Pl. 1. terem" required /></label>
+          <label>Dátum<input type="date" value={newForm.date} onChange={(e) => setNewForm({ ...newForm, date: e.target.value })} required /></label>
+          <label>Kezdés, pl. 1800<input type="number" min="0" max="2359" value={newForm.time} onChange={(e) => setNewForm({ ...newForm, time: e.target.value })} required /></label>
+          <label>Film hossza percben<input type="number" min="1" value={newForm.movieRuntime} onChange={(e) => setNewForm({ ...newForm, movieRuntime: e.target.value })} /></label>
+          <label>Reklám perc<input type="number" min="0" value={newForm.ads} onChange={(e) => setNewForm({ ...newForm, ads: e.target.value })} /></label>
+          <label>Előzetes perc<input type="number" min="0" value={newForm.trailers} onChange={(e) => setNewForm({ ...newForm, trailers: e.target.value })} /></label>
+          <label>Takarítás perc<input type="number" min="0" value={newForm.cleaning} onChange={(e) => setNewForm({ ...newForm, cleaning: e.target.value })} /></label>
+          <div className="form-actions"><button className="primary" type="submit">Új vetítés létrehozása</button></div>
+        </form>
+      </section>
+
+      <section className="card">
+        <h3>Meglévő vetítés időadatai</h3>
+        <p className="muted">Itt a már létrehozott vetítések dátuma, reklámideje, előzetese és takarítása módosítható.</p>
         <form className="grid-form" onSubmit={saveMeta}>
           <label>
             Vetítés
@@ -2072,7 +2485,7 @@ function ScheduleEditor({ auth }) {
               {data.screenings.map((screening) => {
                 const movie = getScreeningMovie(screening, data.movies);
                 const hall = getScreeningHall(screening, data.halls);
-                return <option key={screening.id} value={screening.id}>{movie?.name || screening.movie_id} · {timeToText(screening.time)} · {hall?.name || screening.place}</option>;
+                return <option key={screening.id} value={screening.id}>{movie?.name || screening.movie_id} · {getScreeningDate(screening, meta)} · {timeToText(screening.time)} · {hall?.name || screening.place}</option>;
               })}
             </select>
           </label>
@@ -2113,7 +2526,7 @@ function HallConfigurator({ auth }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const selectedHall = halls.find((hall) => Number(hall.id) === Number(selectedHallId));
+  const selectedHall = halls.find((hall) => idsEqual(hall.id ?? hall.hall_id, selectedHallId));
   const selectedConfig = selectedHall ? configs[selectedHall.id] || {} : {};
   const capacity = selectedHall ? getHallEffectiveCapacity(selectedHall, configs) : MAX_HALL_CAPACITY;
   const seats = generateSeats(capacity);

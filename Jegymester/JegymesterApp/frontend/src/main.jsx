@@ -21,7 +21,7 @@ const PROFILE_OVERRIDES_KEY = 'jegymester_profile_overrides_v2';
 const LOCAL_MOVIES_KEY = 'jegymester_local_movies_v3';
 const LOCAL_SCREENINGS_KEY = 'jegymester_local_screenings_v3';
 const AUTO_SCREENING_ID_BASE = 8700000;
-const PUBLIC_DAYS_AHEAD = 21;
+const PUBLIC_DAYS_AHEAD = 365;
 
 const moviePosterByTitle = [
   { src: '/movie-posters/avatar.jpg', titles: ['avatar'] },
@@ -501,7 +501,11 @@ const publicDemoData = {
 };
 
 function todayDateValue() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function dateValueAfterDays(days = 0) {
@@ -639,6 +643,28 @@ function getScreeningDateTimeFromParts(dateValue, timeValue) {
   const hour = raw.slice(0, 2);
   const minute = raw.slice(2, 4);
   return new Date(`${date}T${hour}:${minute || '00'}:00`);
+}
+
+function isPastDateValue(dateValue) {
+  if (!dateValue) return false;
+  return String(dateValue) < todayDateValue();
+}
+
+function isScreeningInPast(screening, meta = getScheduleMeta()) {
+  if (!screening) return false;
+  const screeningDate = getScreeningDate(screening, meta);
+  const screeningAt = getScreeningDateTimeFromParts(screeningDate, screening?.time);
+  if (Number.isNaN(screeningAt.getTime())) return false;
+  return screeningAt.getTime() <= Date.now();
+}
+
+function handleFutureDateFilter(value, setFilters, filters, setError) {
+  if (isPastDateValue(value)) {
+    setFilters({ ...filters, date: todayDateValue() });
+    if (setError) setError('Elmúlt dátumra nem lehet jegyet foglalni vagy vásárolni. A dátumot a mai napra állítottam.');
+    return;
+  }
+  setFilters({ ...filters, date: value });
 }
 
 function getReservationScreeningDateTime(reservation) {
@@ -820,6 +846,7 @@ function PublicCatalog({ onGoLogin }) {
       const movieText = normalizeSearchText(`${movie?.name || ''} ${movie?.description || ''}`);
       const placeText = screening.place || hall?.name || '';
       const dateText = getScreeningDate(screening, scheduleMeta);
+      if (isScreeningInPast(screening, scheduleMeta)) return false;
       if (movieQuery && !movieText.includes(movieQuery)) return false;
       if (filters.date && dateText !== filters.date) return false;
       if (filters.dayPart && getDayPart(screening.time) !== filters.dayPart) return false;
@@ -891,6 +918,10 @@ function PublicCatalog({ onGoLogin }) {
       setError('Előbb válassz vetítést.');
       return;
     }
+    if (isScreeningInPast(selectedScreening, scheduleMeta)) {
+      setError('Elmúlt vetítésre nem lehet jegyet vásárolni. Válassz mai későbbi vagy jövőbeli időpontot.');
+      return;
+    }
     if (!guest.email || !guest.phone) {
       setError('Vendég vásárláshoz kötelező az e-mail cím és a telefonszám.');
       return;
@@ -944,14 +975,14 @@ function PublicCatalog({ onGoLogin }) {
         <h2>Publikus műsor és vendég jegyvásárlás</h2>
         <button onClick={loadData}>Műsor frissítése</button>
       </div>
-      <p className="muted">A filmek és vetítések bejelentkezés nélkül is megtekinthetők. Vendég vásárlásnál e-mail és telefon megadása kötelező.</p>
+      <p className="muted">A filmek és vetítések bejelentkezés nélkül is megtekinthetők. Vendég vásárlásnál e-mail és telefon megadása kötelező. Elmúlt dátumra vagy már elkezdődött vetítésre nem lehet jegyet venni.</p>
       <Message message={error} type="info" />
       <Message message={message} type="success" />
       {loading ? <p>Publikus műsor betöltése...</p> : (
         <>
           <div className="grid-form">
             <label>Film címe vagy leírása<input type="search" value={filters.movie} onChange={(e) => setFilters({ ...filters, movie: e.target.value })} placeholder="Pl. Dune" /></label>
-            <label>Dátum<input type="date" value={filters.date} onChange={(e) => setFilters({ ...filters, date: e.target.value })} /></label>
+            <label>Dátum<input type="date" min={todayDateValue()} value={filters.date} onChange={(e) => handleFutureDateFilter(e.target.value, setFilters, filters, setError)} /></label>
             <label>Napszak<select value={filters.dayPart} onChange={(e) => setFilters({ ...filters, dayPart: e.target.value })}><option value="">Mindegy</option><option value="délelőtt">Délelőtt</option><option value="délután">Délután</option><option value="este">Este</option></select></label>
             <label>Mozihelyszín<select value={filters.place} onChange={(e) => setFilters({ ...filters, place: e.target.value })}><option value="">Mindegy</option>{places.map((place) => <option key={place} value={place}>{place}</option>)}</select></label>
           </div>
@@ -966,6 +997,7 @@ function PublicCatalog({ onGoLogin }) {
               const movie = getScreeningMovie(screening, data.movies);
               const hall = getScreeningHall(screening, data.halls);
               const availability = getAvailabilitySummary(screening, hall, reservations, hallConfigs);
+              const pastScreening = isScreeningInPast(screening, scheduleMeta);
               return (
                 <article key={screening.id} className={`screening-card movie-ticket-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
                   <div className="movie-card-layout">
@@ -976,13 +1008,13 @@ function PublicCatalog({ onGoLogin }) {
                   {screening.autoCreatedForMovie && <p className="muted"><strong>Automatikus vetítés:</strong> ez a film adminban lett létrehozva, ezért a frontend foglalható műsorba tette. Pontos időpontot az Admin / Showtime ütemezésben adhatsz meg.</p>}
                   <p><strong>Terem:</strong> {hall?.name || screening.place} · <strong>Szabad hely:</strong> {availability.free} / {availability.capacity}</p>
                   <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
-                  <button className="primary" disabled={availability.soldOut} onClick={() => setSelectedScreeningId(screening.id)}>{availability.soldOut ? 'Nincs több szék' : 'Vendégként erre veszek jegyet'}</button>
+                  <button className="primary" disabled={availability.soldOut || pastScreening} onClick={() => setSelectedScreeningId(screening.id)}>{pastScreening ? 'Elmúlt időpont' : availability.soldOut ? 'Nincs több szék' : 'Vendégként erre veszek jegyet'}</button>
                     </div>
                   </div>
                 </article>
               );
             })}
-            {filteredScreenings.length === 0 && <p>Nincs találat. Válassz másik dátumot, vagy töröld a dátumszűrést.</p>}
+            {filteredScreenings.length === 0 && <p>Nincs jövőbeli találat. Válassz mai későbbi vagy jövőbeli dátumot, vagy töröld a dátumszűrést.</p>}
           </section>
           {selectedScreening && selectedHall && selectedMovie && (
             <section className="card nested-card">
@@ -1009,9 +1041,9 @@ function PublicCatalog({ onGoLogin }) {
               </div>
               <SeatGrid seats={selectedSeatsAll} selectedSeats={selectedSeats} takenSeats={takenSeats} vipSeats={selectedHallConfig.vipSeats || []} closedSeats={selectedHallConfig.closedSeats || []} onToggleSeat={toggleSeat} />
               <div className="form-actions">
-                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={autoSelectGuestSeats}>Automatikus helyválasztás</button>
+                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut || isScreeningInPast(selectedScreening, scheduleMeta)} onClick={autoSelectGuestSeats}>Automatikus helyválasztás</button>
                 <button type="button" onClick={() => setSelectedSeats([])}>Kijelölés törlése</button>
-                <button className="primary" type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={createGuestPurchase}>Vendég jegyvásárlás</button>
+                <button className="primary" type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut || isScreeningInPast(selectedScreening, scheduleMeta)} onClick={createGuestPurchase}>Vendég jegyvásárlás</button>
                 <button type="button" onClick={onGoLogin}>Bejelentkezés / regisztráció</button>
               </div>
             </section>
@@ -1282,6 +1314,7 @@ function BookingPage({ auth }) {
       const placeText = screening.place || hall?.name || '';
       const dateText = getScreeningDate(screening, scheduleMeta);
 
+      if (isScreeningInPast(screening, scheduleMeta)) return false;
       if (movieQuery && !movieText.includes(movieQuery)) return false;
       if (filters.date && dateText !== filters.date) return false;
       if (filters.dayPart && getDayPart(screening.time) !== filters.dayPart) return false;
@@ -1412,6 +1445,11 @@ function BookingPage({ auth }) {
       return;
     }
 
+    if (isScreeningInPast(selectedScreening, scheduleMeta)) {
+      setError('Elmúlt vetítésre nem lehet jegyet foglalni vagy vásárolni. Válassz mai későbbi vagy jövőbeli időpontot.');
+      return;
+    }
+
     const requested = normalizeTicketCount(ticketCount, getAvailabilitySummary(selectedScreening, selectedHall, getReservations(), getHallConfigs()).free || 1);
     const availability = getAvailabilitySummary(selectedScreening, selectedHall, getReservations(), getHallConfigs());
     if (availability.soldOut || availability.free < requested) {
@@ -1508,7 +1546,7 @@ function BookingPage({ auth }) {
       <section className="hero">
         <div>
           <h2>Műsorrend böngészése, jegyfoglalás és jegyvásárlás</h2>
-          <p>A műsorrend film, dátum, napszak és mozihelyszín szerint szűrhető. A foglalási állapot 5 másodpercenként frissül, és a rendszer nem enged több jegyet, mint ahány szabad szék van az adott teremben.</p>
+          <p>A műsorrend film, dátum, napszak és mozihelyszín szerint szűrhető. A foglalási állapot 5 másodpercenként frissül, minden jövőbeli időpontra működik, és a rendszer nem enged több jegyet, mint ahány szabad szék van az adott teremben. Elmúlt dátumra vagy már elkezdődött vetítésre nem lehet foglalni.</p>
         </div>
         <button onClick={loadHomeData}>Frissítés</button>
       </section>
@@ -1532,7 +1570,7 @@ function BookingPage({ auth }) {
               </label>
               <label>
                 Dátum
-                <input type="date" value={filters.date} onChange={(e) => setFilters({ ...filters, date: e.target.value })} />
+                <input type="date" min={todayDateValue()} value={filters.date} onChange={(e) => handleFutureDateFilter(e.target.value, setFilters, filters, setError)} />
               </label>
               <label>
                 Napszak
@@ -1560,11 +1598,12 @@ function BookingPage({ auth }) {
           </section>
 
           <section className="cards-grid">
-            {filteredScreenings.length === 0 ? <p>Nincs találat. Válassz másik dátumot, vagy töröld a dátumszűrést.</p> : filteredScreenings.map((screening) => {
+            {filteredScreenings.length === 0 ? <p>Nincs jövőbeli találat. Válassz mai későbbi vagy jövőbeli dátumot, vagy töröld a dátumszűrést.</p> : filteredScreenings.map((screening) => {
               const movie = getScreeningMovie(screening, data.movies);
               const hall = getScreeningHall(screening, data.halls);
               const availability = getAvailabilitySummary(screening, hall, reservations, hallConfigs);
               const info = getScheduleInfo(screening.id, scheduleMeta);
+              const pastScreening = isScreeningInPast(screening, scheduleMeta);
 
               return (
                 <article key={screening.id} className={`screening-card movie-ticket-card ${Number(selectedScreeningId) === Number(screening.id) ? 'selected-card' : ''} ${availability.soldOut ? 'sold-out' : ''}`}>
@@ -1580,7 +1619,7 @@ function BookingPage({ auth }) {
                   <p><strong>Szabad hely:</strong> {availability.free} / {availability.capacity} · <strong>Foglalt:</strong> {availability.taken} · <strong>Lezárt:</strong> {availability.closed}</p>
                   <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
                   <p><strong>Teljes filmidő reklámokkal:</strong> {info.total} perc · <strong>Terem foglalva takarítással:</strong> {info.roomBlocked} perc</p>
-                  <button className="primary" disabled={availability.soldOut} onClick={() => selectScreening(screening)}>{availability.soldOut ? 'Nincs több szék' : 'Erre foglalok / vásárolok'}</button>
+                  <button className="primary" disabled={availability.soldOut || pastScreening} onClick={() => selectScreening(screening)}>{pastScreening ? 'Elmúlt időpont' : availability.soldOut ? 'Nincs több szék' : 'Erre foglalok / vásárolok'}</button>
                     </div>
                   </div>
                 </article>
@@ -1656,10 +1695,10 @@ function BookingPage({ auth }) {
               />
 
               <div className="form-actions">
-                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={() => autoSelectSeats()}>Automatikus helyválasztás {ticketCount} jegyre</button>
+                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut || isScreeningInPast(selectedScreening, scheduleMeta)} onClick={() => autoSelectSeats()}>Automatikus helyválasztás {ticketCount} jegyre</button>
                 <button type="button" onClick={() => setSelectedSeats([])}>Kijelölés törlése</button>
-                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={createReservation}>Foglalás létrehozása</button>
-                <button className="primary" type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut} onClick={createPurchase}>Azonnali jegyvásárlás</button>
+                <button type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut || isScreeningInPast(selectedScreening, scheduleMeta)} onClick={createReservation}>Foglalás létrehozása</button>
+                <button className="primary" type="button" disabled={getAvailabilitySummary(selectedScreening, selectedHall, reservations, hallConfigs).soldOut || isScreeningInPast(selectedScreening, scheduleMeta)} onClick={createPurchase}>Azonnali jegyvásárlás</button>
               </div>
 
               <p className="muted small">
@@ -2461,6 +2500,10 @@ function ScheduleEditor({ auth }) {
       setError('Adj meg vetítési dátumot.');
       return;
     }
+    if (isPastDateValue(newForm.date)) {
+      setError('Elmúlt dátumra nem lehet új showtime-ot létrehozni. Válassz mai vagy jövőbeli dátumot.');
+      return;
+    }
 
     const overlaps = findHallOverlaps({ hallId, date: newForm.date, time, scheduleInfo });
     if (overlaps.length) {
@@ -2548,6 +2591,11 @@ function ScheduleEditor({ auth }) {
       return;
     }
 
+    if (isPastDateValue(form.date || todayDateValue())) {
+      setError('Elmúlt dátumra nem lehet vetítést ütemezni. Válassz mai vagy jövőbeli dátumot.');
+      return;
+    }
+
     const selectedScreening = data.screenings.find((screening) => idsEqual(screening.id, selectedId));
     const scheduleInfo = getScheduleInfo(selectedId, { [selectedId]: schedulePayloadFromForm(form) });
     const overlaps = selectedScreening ? findHallOverlaps({
@@ -2630,7 +2678,7 @@ function ScheduleEditor({ auth }) {
             </select>
           </label>
           <label>Helyszín / teremnév<input value={newForm.place} onChange={(e) => setNewForm({ ...newForm, place: e.target.value })} placeholder="Pl. 1. terem" required /></label>
-          <label>Dátum<input type="date" value={newForm.date} onChange={(e) => setNewForm({ ...newForm, date: e.target.value })} required /></label>
+          <label>Dátum<input type="date" min={todayDateValue()} value={newForm.date} onChange={(e) => setNewForm({ ...newForm, date: isPastDateValue(e.target.value) ? todayDateValue() : e.target.value })} required /></label>
           <label>Kezdés, pl. 1800<input type="number" min="0" max="2359" value={newForm.time} onChange={(e) => setNewForm({ ...newForm, time: e.target.value })} required /></label>
           <label>Film hossza percben<input type="number" min="1" value={newForm.movieRuntime} onChange={(e) => setNewForm({ ...newForm, movieRuntime: e.target.value })} /></label>
           <label>Reklám perc<input type="number" min="0" value={newForm.ads} onChange={(e) => setNewForm({ ...newForm, ads: e.target.value })} /></label>
@@ -2655,7 +2703,7 @@ function ScheduleEditor({ auth }) {
               })}
             </select>
           </label>
-          <label>Vetítés dátuma<input type="date" value={form.date || todayDateValue()} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label>
+          <label>Vetítés dátuma<input type="date" min={todayDateValue()} value={form.date || todayDateValue()} onChange={(e) => setForm({ ...form, date: isPastDateValue(e.target.value) ? todayDateValue() : e.target.value })} /></label>
           <label>Film hossza percben<input type="number" min="1" value={form.movieRuntime} onChange={(e) => setForm({ ...form, movieRuntime: e.target.value })} /></label>
           <label>Reklám perc<input type="number" min="0" value={form.ads} onChange={(e) => setForm({ ...form, ads: e.target.value })} /></label>
           <label>Előzetes perc<input type="number" min="0" value={form.trailers} onChange={(e) => setForm({ ...form, trailers: e.target.value })} /></label>

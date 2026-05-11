@@ -1057,7 +1057,7 @@ function PublicCatalog({ onGoLogin }) {
 function LoginPage({ onLogin }) {
   const [mode, setMode] = useState('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '', phone: '' });
+  const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '', phone: '', role: 'felhasznalo' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1166,6 +1166,15 @@ function LoginPage({ onLogin }) {
               Jelszó
               <input type="password" required minLength="4" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} />
             </label>
+            <label>
+              Szerepkör
+              <select value={registerForm.role} onChange={(e) => setRegisterForm({ ...registerForm, role: e.target.value })}>
+                <option value="felhasznalo">Felhasználó</option>
+                <option value="penztaros">Pénztáros</option>
+                <option value="adminisztrator">Adminisztrátor</option>
+              </select>
+            </label>
+            <p className="muted small">A választott szerepkör határozza meg, hogy milyen jogosultságokkal lép be a felhasználó.</p>
             <button className="primary" disabled={loading}>{loading ? 'Mentés...' : 'Regisztráció'}</button>
           </form>
         )}

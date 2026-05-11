@@ -7,6 +7,9 @@ from app.models.user import User
 from app.security import generate_access_token
 
 
+VALID_ROLES = {"felhasznalo", "penztaros", "adminisztrator"}
+
+
 class UserService:
     @staticmethod
     def create_user(request):
@@ -17,11 +20,15 @@ class UserService:
             if existing_user is not None:
                 return False, "Már létezik felhasználó ezzel az e-mail címmel"
 
+            role_name = request.get("role") or "felhasznalo"
+            if role_name not in VALID_ROLES:
+                return False, "Érvénytelen szerepkör. Használható: felhasznalo, penztaros, adminisztrator"
+
             role = db.session.execute(
-                select(Role).filter(Role.name == "felhasznalo")
+                select(Role).filter(Role.name == role_name)
             ).scalar_one_or_none()
             if role is None:
-                role = Role(name="felhasznalo")
+                role = Role(name=role_name)
                 db.session.add(role)
                 db.session.flush()
 

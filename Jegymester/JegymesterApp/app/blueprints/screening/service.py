@@ -45,7 +45,6 @@ class ScreeningService:
 
             screening = Screening(
                 time=data["time"],
-                place=data["place"],
                 movie=movie,
                 hall=hall
             )
@@ -70,9 +69,6 @@ class ScreeningService:
 
             if "time" in data:
                 screening.time = data["time"]
-
-            if "place" in data:
-                screening.place = data["place"]
 
             if "movie_id" in data:
                 movie = db.session.get(Movie, data["movie_id"])

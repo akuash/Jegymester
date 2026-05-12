@@ -77,10 +77,9 @@ def get_or_create_movie(name: str, description: str | None) -> tuple[Movie, bool
     return item, True
 
 
-def get_or_create_screening(time: int, place: str, movie: Movie, hall: Hall) -> tuple[Screening, bool]:
+def get_or_create_screening(time: int, movie: Movie, hall: Hall) -> tuple[Screening, bool]:
     item = Screening.query.filter_by(
         time=time,
-        place=place,
         movie_id=movie.id,
         hall_id=hall.id,
     ).first()
@@ -89,7 +88,6 @@ def get_or_create_screening(time: int, place: str, movie: Movie, hall: Hall) -> 
 
     item = Screening(
         time=time,
-        place=place,
         movie=movie,
         hall=hall,
     )
@@ -125,7 +123,7 @@ def print_state() -> None:
     print("Felhasználók:", [(u.id, u.name, u.email, u.role_id) for u in User.query.order_by(User.id).all()])
     print("Termek:", [(h.id, h.name, h.capacity) for h in Hall.query.order_by(Hall.id).all()])
     print("Filmek:", [(m.id, m.name) for m in Movie.query.order_by(Movie.id).all()])
-    print("Vetítések:", [(s.id, s.time, s.place, s.movie_id, s.hall_id) for s in Screening.query.order_by(Screening.id).all()])
+    print("Vetítések:", [(s.id, s.time, s.movie_id, s.hall_id) for s in Screening.query.order_by(Screening.id).all()])
     print("Jegyek:", [(t.id, t.cost, t.available, t.screening_id, t.user_id) for t in Ticket.query.order_by(Ticket.id).all()])
     print("Darabszámok:", {
         "roles": Role.query.count(),
@@ -207,13 +205,13 @@ def main() -> None:
             movie3, c = get_or_create_movie("Batman", "Akció film")
             (created if c else updated).append("movie: Batman")
 
-            screening1, c = get_or_create_screening(1800, "Terem 1", movie1, hall1)
+            screening1, c = get_or_create_screening(1800, movie1, hall1)
             (created if c else updated).append("screening: Dune")
 
-            screening2, c = get_or_create_screening(2000, "Terem 2", movie2, hall2)
+            screening2, c = get_or_create_screening(2000, movie2, hall2)
             (created if c else updated).append("screening: Avatar")
 
-            screening3, c = get_or_create_screening(2130, "VIP terem", movie3, hall3)
+            screening3, c = get_or_create_screening(2130, movie3, hall3)
             (created if c else updated).append("screening: Batman")
 
             _, c = get_or_create_ticket(2500, True, screening1, user1)
@@ -242,3 +240,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

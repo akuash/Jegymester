@@ -3,14 +3,12 @@ from marshmallow import Schema, fields
 
 class ScreeningRequestSchema(Schema):
     time = fields.Integer(required=True)
-    place = fields.String(required=True)
     movie_id = fields.Integer(required=True)
     hall_id = fields.Integer(required=True)
 
 
 class ScreeningUpdateSchema(Schema):
     time = fields.Integer(required=False)
-    place = fields.String(required=False)
     movie_id = fields.Integer(required=False)
     hall_id = fields.Integer(required=False)
 
@@ -34,7 +32,6 @@ class HallShortSchema(Schema):
 class ScreeningResponseSchema(Schema):
     id = fields.Integer()
     time = fields.Integer()
-    place = fields.String()
     movie_id = fields.Integer()
     hall_id = fields.Integer()
 
@@ -42,7 +39,6 @@ class ScreeningResponseSchema(Schema):
 class ScreeningDetailsSchema(Schema):
     id = fields.Integer()
     time = fields.Integer()
-    place = fields.String()
     movie_id = fields.Integer()
     hall_id = fields.Integer()
     movie = fields.Nested(MovieShortSchema)

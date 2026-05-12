@@ -870,3 +870,23 @@ body::before {
     grid-template-columns: 1fr;
   }
 }
+
+.payment-form {
+  margin-top: 16px;
+  border: 1px solid #cbd5e1;
+}
+
+.payment-form .card-title-row {
+  margin-bottom: 8px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.checkbox-label input {
+  width: auto;
+}

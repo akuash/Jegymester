@@ -409,12 +409,8 @@ function getScreeningMovie(screening, movies = []) {
   return screening?.movie || movies.find((movie) => idsEqual(movie.id ?? movie.movie_id, movieId)) || null;
 }
 
-function getScreeningHallId(screening) {
-  return screening?.hall_id ?? screening?.hall?.id ?? screening?.hall?.hall_id;
-}
-
 function getScreeningHall(screening, halls = []) {
-  const hallId = getScreeningHallId(screening);
+  const hallId = screening?.hall_id ?? screening?.hall?.id ?? screening?.hall?.hall_id;
   return screening?.hall || halls.find((hall) => idsEqual(hall.id ?? hall.hall_id, hallId)) || null;
 }
 
@@ -658,74 +654,6 @@ function syntheticScreeningId(screening, dayIndex, position) {
   return 9000000 + fallback * 100 + dayIndex * 50 + position;
 }
 
-function getScheduleInfoForScreening(screening, meta = getScheduleMeta()) {
-  const ownInfo = getScheduleInfo(screening?.id, meta);
-  const templateId = screening?.originalScreeningId;
-  if (!templateId || meta?.[screening?.id]) return ownInfo;
-  return getScheduleInfo(templateId, meta);
-}
-
-function resolveCatalogHallConflicts(catalog, screenings, scheduleMeta = getScheduleMeta()) {
-  const resolvedHalls = [...(catalog.halls.length ? catalog.halls : publicDemoData.halls)];
-  const occupiedSlots = [];
-  let autoHallCounter = 1;
-
-  const getHallKey = (hall) => hall?.id ?? hall?.hall_id;
-  const createAutoHall = (preferredHall) => {
-    const capacity = getHallEffectiveCapacity(preferredHall || { capacity: MAX_HALL_CAPACITY });
-    const hall = {
-      id: `auto-hall-${autoHallCounter}`,
-      name: `${autoHallCounter}. automatikus tartalék terem`,
-      capacity,
-      autoCreatedForConflict: true,
-    };
-    autoHallCounter += 1;
-    resolvedHalls.push(hall);
-    return hall;
-  };
-
-  const resolvedScreenings = [...screenings]
-    .sort(compareScreeningsByDateTime)
-    .map((screening) => {
-      const preferredHallId = getScreeningHallId(screening);
-      const preferredHall = resolvedHalls.find((hall) => idsEqual(getHallKey(hall), preferredHallId));
-      const candidates = [
-        ...(preferredHall ? [preferredHall] : []),
-        ...resolvedHalls.filter((hall) => !idsEqual(getHallKey(hall), preferredHallId)),
-      ];
-      const date = getScreeningDate(screening, scheduleMeta);
-      const bounds = getScheduleSlotBounds(date, screening.time, getScheduleInfoForScreening(screening, scheduleMeta));
-
-      let selectedHall = candidates.find((hall) => {
-        const hallId = getHallKey(hall);
-        return !occupiedSlots.some((slot) => (
-          slot.date === date
-          && idsEqual(slot.hallId, hallId)
-          && scheduleSlotsOverlap(slot.bounds, bounds)
-        ));
-      });
-
-      if (!selectedHall) {
-        selectedHall = createAutoHall(preferredHall);
-      }
-
-      const selectedHallId = getHallKey(selectedHall);
-      occupiedSlots.push({ date, hallId: selectedHallId, bounds, screeningId: screening.id });
-
-      const switched = preferredHallId !== undefined && preferredHallId !== null && !idsEqual(selectedHallId, preferredHallId);
-      return {
-        ...screening,
-        hall_id: selectedHallId,
-        hall: selectedHall,
-        originalHallId: screening.originalHallId ?? preferredHallId,
-        originalHallName: screening.originalHallName ?? preferredHall?.name ?? screening?.hall?.name ?? '',
-        autoHallSwitched: Boolean(screening.autoHallSwitched || switched),
-      };
-    });
-
-  return { halls: resolvedHalls, screenings: resolvedScreenings };
-}
-
 function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
   const catalog = createAutoScreeningsForMovies(normalizeCatalogData(rawData));
   const sourceScreenings = catalog.screenings.length ? catalog.screenings : publicDemoData.screenings;
@@ -755,12 +683,10 @@ function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
   const expandedScreenings = [...explicitScreenings, ...recurringScreenings]
     .filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta))
     .sort(compareScreeningsByDateTime);
-  const resolved = resolveCatalogHallConflicts(catalog, expandedScreenings, scheduleMeta);
 
   return {
     ...catalog,
-    halls: resolved.halls,
-    screenings: resolved.screenings,
+    screenings: expandedScreenings,
   };
 }
 
@@ -1298,7 +1224,6 @@ function PublicCatalog({ onGoLogin }) {
                   <p className="muted">{movie?.description}</p>
                   {screening.autoCreatedForMovie && <p className="muted"><strong>Automatikus vetítés:</strong> ez a film adminban lett létrehozva, ezért a frontend foglalható műsorba tette. Pontos időpontot az Admin / Showtime ütemezésben adhatsz meg.</p>}
                   <p><strong>Terem:</strong> {hall?.name || '-'} · <strong>Szabad hely:</strong> {availability.free} / {availability.capacity}</p>
-                  {screening.autoHallSwitched && <p className="muted"><strong>Terem módosítva:</strong> ütközés miatt ez a vetítés nem az eredeti {screening.originalHallName || 'teremben'}, hanem itt látható.</p>}
                   <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
                   <button className="primary" disabled={availability.soldOut || pastScreening} onClick={() => setSelectedScreeningId(screening.id)}>{pastScreening ? 'Elmúlt időpont' : availability.soldOut ? 'Nincs több szék' : 'Vendégként erre veszek jegyet'}</button>
                     </div>
@@ -1315,7 +1240,6 @@ function PublicCatalog({ onGoLogin }) {
                 <div>
                   <h3>Vendég vásárlás: {selectedMovie.name} · {getScreeningDate(selectedScreening, scheduleMeta)} {timeToText(selectedScreening.time)}</h3>
                   <p className="muted">Itt tényleges képként jelenik meg az adminban megadott filmkép.</p>
-                  {selectedScreening.autoHallSwitched && <p className="muted"><strong>Terem módosítva:</strong> ütközés miatt az eredeti {selectedScreening.originalHallName || 'terem'} helyett most ez érvényes: {selectedHall?.name || '-'}.</p>}
                 </div>
               </div>
               <div className="grid-form">
@@ -2012,7 +1936,6 @@ function BookingPage({ auth }) {
                       </div>
                   <p className="muted">{movie?.description || 'Nincs leírás.'}</p>
                   <p><strong>Hely:</strong> {hall?.name || '-'} · <strong>Terem:</strong> {hall?.name || '-'}</p>
-                  {screening.autoHallSwitched && <p className="muted"><strong>Terem módosítva:</strong> ütközés miatt ez a vetítés nem az eredeti {screening.originalHallName || 'teremben'}, hanem itt látható.</p>}
                   <p><strong>Szabad hely:</strong> {availability.free} / {availability.capacity} · <strong>Foglalt:</strong> {availability.taken} · <strong>Lezárt:</strong> {availability.closed}</p>
                   <div className="capacity-meter"><span style={{ width: `${availability.occupiedPercent}%` }} /></div>
                   <p><strong>Teljes filmidő reklámokkal:</strong> {info.total} perc · <strong>Terem foglalva takarítással:</strong> {info.roomBlocked} perc</p>
@@ -2034,7 +1957,6 @@ function BookingPage({ auth }) {
                     <span className="badge">Max. teremkapacitás: {MAX_HALL_CAPACITY}</span>
                   </div>
                   <p className="muted">Itt tényleges képként jelenik meg az adminban megadott filmkép.</p>
-                  {selectedScreening.autoHallSwitched && <p className="muted"><strong>Terem módosítva:</strong> ütközés miatt az eredeti {selectedScreening.originalHallName || 'terem'} helyett most ez érvényes: {selectedHall?.name || '-'}.</p>}
                 </div>
               </div>
 

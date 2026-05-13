@@ -20,6 +20,7 @@ const SCHEDULE_META_KEY = 'jegymester_schedule_meta_v2';
 const PROFILE_OVERRIDES_KEY = 'jegymester_profile_overrides_v2';
 const LOCAL_MOVIES_KEY = 'jegymester_local_movies_v3';
 const LOCAL_SCREENINGS_KEY = 'jegymester_local_screenings_v3';
+const DELETED_SCREENING_OCCURRENCES_KEY = 'jegymester_deleted_screening_occurrences_v1';
 const AUTO_SCREENING_ID_BASE = 8700000;
 const PUBLIC_DAYS_AHEAD = 365;
 
@@ -278,6 +279,43 @@ function saveScheduleMeta(meta) {
   writeStorage(SCHEDULE_META_KEY, meta);
 }
 
+function getDeletedScreeningOccurrences() {
+  return readStorage(DELETED_SCREENING_OCCURRENCES_KEY, []);
+}
+
+function saveDeletedScreeningOccurrences(keys) {
+  const uniqueKeys = Array.from(new Set((keys || []).filter(Boolean)));
+  writeStorage(DELETED_SCREENING_OCCURRENCES_KEY, uniqueKeys);
+  notifyLocalCatalogChanged();
+}
+
+function getScreeningTemplateId(screening) {
+  return screening?.originalScreeningId ?? screening?.id;
+}
+
+function getExplicitScreeningDate(screening, meta = getScheduleMeta()) {
+  return screening?.date || meta?.[screening?.id]?.date || null;
+}
+
+function getScreeningOccurrenceKey(screening, meta = getScheduleMeta()) {
+  const templateId = normalizeId(getScreeningTemplateId(screening));
+  const date = getExplicitScreeningDate(screening, meta) || getScreeningDate(screening, meta);
+  const time = normalizeId(screening?.time);
+  return templateId && date ? `${templateId}|${date}|${time}` : '';
+}
+
+function isScreeningOccurrenceDeleted(screening, meta = getScheduleMeta()) {
+  const key = getScreeningOccurrenceKey(screening, meta);
+  return key ? getDeletedScreeningOccurrences().includes(key) : false;
+}
+
+function rememberDeletedScreeningOccurrence(screening, meta = getScheduleMeta()) {
+  const key = getScreeningOccurrenceKey(screening, meta);
+  if (!key) return '';
+  saveDeletedScreeningOccurrences([...getDeletedScreeningOccurrences(), key]);
+  return key;
+}
+
 
 function getLocalMovies() {
   return readStorage(LOCAL_MOVIES_KEY, []);
@@ -514,7 +552,14 @@ function dateValueAfterDays(days = 0) {
 }
 
 function getScreeningDate(screening, meta = getScheduleMeta()) {
-  return screening?.date || meta?.[screening?.id]?.date || todayDateValue();
+  return getExplicitScreeningDate(screening, meta) || todayDateValue();
+}
+
+function compareScreeningsByDateTime(left, right) {
+  const leftDate = getScreeningDate(left);
+  const rightDate = getScreeningDate(right);
+  if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+  return Number(left?.time || 0) - Number(right?.time || 0);
 }
 
 function asArray(value) {
@@ -573,16 +618,32 @@ function syntheticScreeningId(screening, dayIndex, position) {
 function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
   const catalog = createAutoScreeningsForMovies(normalizeCatalogData(rawData));
   const sourceScreenings = catalog.screenings.length ? catalog.screenings : publicDemoData.screenings;
+  const scheduleMeta = getScheduleMeta();
 
-  const expandedScreenings = Array.from({ length: Math.max(1, Number(days) || 1) }, (_, dayIndex) => {
+  const explicitScreenings = sourceScreenings
+    .filter((screening) => getExplicitScreeningDate(screening, scheduleMeta))
+    .map((screening) => ({
+      ...screening,
+      date: getExplicitScreeningDate(screening, scheduleMeta),
+    }));
+
+  const recurringSources = sourceScreenings
+    .map((screening, index) => ({ screening, index }))
+    .filter(({ screening }) => !getExplicitScreeningDate(screening, scheduleMeta));
+
+  const recurringScreenings = Array.from({ length: Math.max(1, Number(days) || 1) }, (_, dayIndex) => {
     const date = dateValueAfterDays(dayIndex);
-    return sourceScreenings.map((screening, index) => ({
+    return recurringSources.map(({ screening, index }) => ({
       ...screening,
       id: syntheticScreeningId(screening, dayIndex, index),
-      originalScreeningId: screening.id,
+      originalScreeningId: screening.originalScreeningId ?? screening.id,
       date,
     }));
   }).flat();
+
+  const expandedScreenings = [...explicitScreenings, ...recurringScreenings]
+    .filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta))
+    .sort(compareScreeningsByDateTime);
 
   return {
     ...catalog,
@@ -608,20 +669,24 @@ function uniqueScreeningTemplates(screenings = []) {
 }
 
 function screeningsCoveringDate(catalog, targetDate) {
-  if (!targetDate) return catalog.screenings;
-  const hasTargetDate = catalog.screenings.some((screening) => getScreeningDate(screening) === targetDate);
-  if (hasTargetDate) return catalog.screenings;
+  const scheduleMeta = getScheduleMeta();
+  const visibleScreenings = (catalog.screenings || [])
+    .filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta));
 
-  const templates = uniqueScreeningTemplates(catalog.screenings.length ? catalog.screenings : publicDemoData.screenings);
+  if (!targetDate) return visibleScreenings;
+  const hasTargetDate = visibleScreenings.some((screening) => getScreeningDate(screening, scheduleMeta) === targetDate);
+  if (hasTargetDate) return visibleScreenings;
+
+  const templates = uniqueScreeningTemplates(visibleScreenings.length ? visibleScreenings : publicDemoData.screenings);
   const dateHash = dateHashForScreeningId(targetDate);
   const generatedForDate = templates.map((screening, index) => ({
     ...screening,
     id: syntheticScreeningId(screening, dateHash, index),
     originalScreeningId: screening.originalScreeningId ?? screening.id,
     date: targetDate,
-  }));
+  })).filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta));
 
-  return [...catalog.screenings, ...generatedForDate];
+  return [...visibleScreenings, ...generatedForDate];
 }
 
 function availableScheduleDates(days = PUBLIC_DAYS_AHEAD) {
@@ -748,6 +813,69 @@ function isValidPaymentForm(form) {
     && cvcDigits.length >= 3
     && form.acceptTerms
   );
+}
+
+
+function getOrderEmailAddress(order, auth, buyerInfo = {}) {
+  const displayUser = getDisplayUser(auth) || {};
+  return (
+    buyerInfo.email
+    || order.paymentContactEmail
+    || order.guestEmail
+    || displayUser.email
+    || auth?.user?.email
+    || ''
+  ).trim();
+}
+
+function buildFeedbackEmailText(order, type = 'reservation') {
+  const isPayment = type === 'payment';
+  const title = isPayment ? 'Bankkártyás fizetés megkezdve' : 'Foglalás létrejött';
+  const codeLabel = isPayment ? 'Jegykód' : 'Foglalási kód';
+  const paymentLine = isPayment
+    ? `Fizetve: ${order.total} Ft\nBankkártya: ${order.cardLast4 ? `**** **** **** ${order.cardLast4}` : 'bankkártyás fizetés'}`
+    : `Fizetendő a pénztárnál: ${order.total} Ft`;
+
+  return [
+    `Kedves ${order.userName || 'Vásárló'}!`,
+    '',
+    `A JegyMester rendszerben a következő visszaigazolás készült: ${title}.`,
+    '',
+    `${codeLabel}: ${order.code}`,
+    `Film: ${order.movieName}`,
+    `Dátum: ${order.screeningDate}`,
+    `Időpont: ${timeToText(order.time)}`,
+    `Terem: ${order.hallName}`,
+    `Helyek: ${(order.seats || []).join(', ')}`,
+    `Jegytípus: ${order.categoryLabel}`,
+    paymentLine,
+    `Fizetési mód: ${order.paymentMethod}`,
+    '',
+    isPayment
+      ? 'A bankkártyás jegyvásárlás rögzítésre került.'
+      : 'A foglalást a pénztárnál a foglalási kóddal lehet véglegesíteni.',
+    '',
+    'Köszönjük, hogy a JegyMestert választottad!'
+  ].join('\n');
+}
+
+function openFeedbackEmail(order, type, auth, buyerInfo = {}) {
+  const email = getOrderEmailAddress(order, auth, buyerInfo);
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) return false;
+
+  const subject = type === 'payment'
+    ? `JegyMester bankkártyás fizetés visszaigazolás - ${order.code}`
+    : `JegyMester foglalás visszaigazolás - ${order.code}`;
+  const body = buildFeedbackEmailText(order, type);
+  const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  const link = document.createElement('a');
+  link.href = mailto;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  return true;
 }
 
 async function loadCatalogData(token = null, useDemoOnError = false) {
@@ -1411,12 +1539,12 @@ function BookingPage({ auth }) {
     }, 5000);
 
     function onStorage(event) {
-      if ([RESERVATIONS_KEY, HALL_CONFIG_KEY, SCHEDULE_META_KEY].includes(event.key)) {
+      if ([RESERVATIONS_KEY, HALL_CONFIG_KEY, SCHEDULE_META_KEY, DELETED_SCREENING_OCCURRENCES_KEY].includes(event.key)) {
         setReservations(getReservations());
         setHallConfigs(getHallConfigs());
         setScheduleMeta(getScheduleMeta());
       }
-      if ([LOCAL_MOVIES_KEY, LOCAL_SCREENINGS_KEY].includes(event.key)) {
+      if ([LOCAL_MOVIES_KEY, LOCAL_SCREENINGS_KEY, DELETED_SCREENING_OCCURRENCES_KEY].includes(event.key)) {
         loadHomeData();
       }
     }
@@ -1533,6 +1661,9 @@ function BookingPage({ auth }) {
     const now = new Date().toISOString();
     const paid = orderType === 'paid';
     const cardDigits = digitsOnly(buyerInfo.cardNumber);
+    const displayUser = getDisplayUser(auth) || {};
+    const contactEmail = buyerInfo.email || displayUser.email || auth?.user?.email || '';
+    const contactPhone = buyerInfo.phone || displayUser.phone || auth?.user?.phone || '';
 
     const newTicketOrder = {
       ...makeTicketOrder({
@@ -1544,14 +1675,14 @@ function BookingPage({ auth }) {
         category,
         status: paid ? 'paid' : 'reserved',
         paymentMethod: paid ? 'online bankkártyás fizetés' : 'pénztárban fizetendő',
-        buyerName: buyerInfo.buyerName || getDisplayUser(auth)?.name,
-        guestEmail: paid ? buyerInfo.email || '' : '',
-        guestPhone: paid ? buyerInfo.phone || '' : '',
+        buyerName: buyerInfo.buyerName || displayUser.name,
+        guestEmail: contactEmail,
+        guestPhone: contactPhone,
         source: 'registered-user',
         scheduleMeta,
       }),
-      paymentContactEmail: paid ? buyerInfo.email || '' : '',
-      paymentContactPhone: paid ? buyerInfo.phone || '' : '',
+      paymentContactEmail: contactEmail,
+      paymentContactPhone: contactPhone,
       cardHolder: paid ? buyerInfo.cardName || '' : '',
       cardLast4: paid ? cardDigits.slice(-4) : '',
       paymentStartedAt: paid ? now : null,
@@ -1563,11 +1694,16 @@ function BookingPage({ auth }) {
     setSelectedSeats([]);
     setShowPaymentForm(false);
 
+    const emailOpened = openFeedbackEmail(newTicketOrder, paid ? 'payment' : 'reservation', auth, buyerInfo);
+    const emailText = emailOpened
+      ? 'A visszaigazoló e-mail megnyílt az e-mail kliensben.'
+      : 'Nem találtam érvényes e-mail címet, ezért a visszaigazoló e-mail nem nyílt meg.';
+
     if (paid) {
       setPaymentForm(buildPaymentFormFromAuth(auth));
-      setMessage(`Bankkártyás fizetés megkezdve és jegyvásárlás rögzítve. Jegykód: ${newTicketOrder.code}. Fizetve: ${newTicketOrder.total} Ft.`);
+      setMessage(`Bankkártyás fizetés megkezdve és jegyvásárlás rögzítve. Jegykód: ${newTicketOrder.code}. Fizetve: ${newTicketOrder.total} Ft. ${emailText}`);
     } else {
-      setMessage(`Foglalás létrejött. Foglalási kód: ${newTicketOrder.code}. Fizetendő a pénztárnál: ${newTicketOrder.total} Ft.`);
+      setMessage(`Foglalás létrejött. Foglalási kód: ${newTicketOrder.code}. Fizetendő a pénztárnál: ${newTicketOrder.total} Ft. ${emailText}`);
     }
 
     return true;
@@ -1833,7 +1969,7 @@ function BookingPage({ auth }) {
                     <h3>Bankkártyás fizetési űrlap</h3>
                     <span className="badge">Fizetendő: {total} Ft</span>
                   </div>
-                  <p className="muted small">Az azonnali vásárlás csak akkor indítható, ha minden kötelező mezőt kitöltöttél. A kártyaadatokból a frontend csak az utolsó 4 számjegyet menti el a helyi jegyadatokhoz.</p>
+                  <p className="muted small">Az azonnali vásárlás csak akkor indítható, ha minden kötelező mezőt kitöltöttél. A gomb megnyitja a vásárló e-mail címére előkészített visszaigazoló e-mailt is. A kártyaadatokból a frontend csak az utolsó 4 számjegyet menti el a helyi jegyadatokhoz.</p>
                   <div className="grid-form">
                     <label>
                       Vásárló neve
@@ -1876,7 +2012,7 @@ function BookingPage({ auth }) {
               )}
 
               <p className="muted small">
-                Példa: ha 5 felnőtt jegyet választasz, az alapár {5 * ticketCategories.adult.price} Ft. VIP helyenként +600 Ft. A foglalás pénztárban fizetendő, a vásárlás azonnal fizetett állapotba kerül.
+                Példa: ha 5 felnőtt jegyet választasz, az alapár {5 * ticketCategories.adult.price} Ft. VIP helyenként +600 Ft. A foglalás pénztárban fizetendő, a vásárlás azonnal fizetett állapotba kerül. Foglalás és bankkártyás fizetés után a frontend visszaigazoló e-mailt készít elő a felhasználó e-mail címére.
               </p>
             </section>
           )}
@@ -2586,6 +2722,8 @@ function ScheduleEditor({ auth }) {
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [deletedKeys, setDeletedKeys] = useState(getDeletedScreeningOccurrences());
+  const [scheduleFilterDate, setScheduleFilterDate] = useState('');
 
   async function loadData() {
     try {
@@ -2610,6 +2748,9 @@ function ScheduleEditor({ auth }) {
     setForm({ ...defaultScheduleMeta, date: todayDateValue(), ...(meta[selectedId] || {}) });
   }, [selectedId, meta]);
 
+  const scheduleCatalog = useMemo(() => buildDailyCatalog(data), [data, meta, deletedKeys]);
+  const scheduleScreenings = scheduleCatalog.screenings;
+
   function normalizeTimeValue(value) {
     const digits = String(value || '').replace(/\D/g, '').padStart(4, '0').slice(-4);
     const hour = Math.min(23, Number(digits.slice(0, 2)) || 0);
@@ -2627,7 +2768,7 @@ function ScheduleEditor({ auth }) {
     const target = getScheduleEnd(date, time, scheduleInfo);
     if (Number.isNaN(target.start.getTime()) || Number.isNaN(target.end.getTime())) return [];
 
-    return data.screenings.filter((screening) => {
+    return scheduleScreenings.filter((screening) => {
       if (ignoreId && idsEqual(screening.id, ignoreId)) return false;
       if (!idsEqual(screening.hall_id, hallId)) return false;
 
@@ -2765,7 +2906,7 @@ function ScheduleEditor({ auth }) {
       return;
     }
 
-    const selectedScreening = data.screenings.find((screening) => idsEqual(screening.id, selectedId));
+    const selectedScreening = scheduleScreenings.find((screening) => idsEqual(screening.id, selectedId));
     const scheduleInfo = getScheduleInfo(selectedId, { [selectedId]: schedulePayloadFromForm(form) });
     const overlaps = selectedScreening ? findHallOverlaps({
       hallId: selectedScreening.hall_id,
@@ -2793,7 +2934,79 @@ function ScheduleEditor({ auth }) {
     setError('');
   }
 
-  const rows = data.screenings.map((screening) => {
+  async function deleteShowtime(screeningOrId) {
+    const screeningId = typeof screeningOrId === 'object' ? screeningOrId?.id : screeningOrId;
+    if (!screeningId) {
+      setError('Válassz törölhető vetítést.');
+      return;
+    }
+
+    const screening = scheduleScreenings.find((item) => idsEqual(item.id, screeningId)) || (typeof screeningOrId === 'object' ? screeningOrId : null);
+    const movie = getScreeningMovie(screening, data.movies);
+    const hall = getScreeningHall(screening, data.halls);
+    const confirmed = window.confirm(`Biztosan törlöd ezt a vetítést?\n${movie?.name || 'Film'} · ${getScreeningDate(screening, meta)} · ${timeToText(screening?.time)} · ${hall?.name || '-'}`);
+    if (!confirmed) return;
+
+    setError('');
+    setMessage('');
+
+    const nextMeta = { ...meta };
+    delete nextMeta[screeningId];
+
+    try {
+      if (screening?.originalScreeningId) {
+        rememberDeletedScreeningOccurrence(screening, meta);
+        saveReservations(getReservations().filter((reservation) => !idsEqual(reservation.screeningId, screeningId)));
+        saveScheduleMeta(nextMeta);
+        setMeta(nextMeta);
+        setDeletedKeys(getDeletedScreeningOccurrences());
+        setSelectedId('');
+        setForm({ ...defaultScheduleMeta, date: todayDateValue() });
+        setMessage('A kiválasztott napi vetítés törölve. Ez csak azt a napot rejti el, a többi napi vetítés megmarad.');
+        return;
+      }
+
+      const numericBackendId = Number(screeningId);
+      const localOnly = screening?.localOnly || !Number.isInteger(numericBackendId);
+
+      if (!localOnly) {
+        await apiRequest(`/screening/${screeningId}`, { method: 'DELETE' }, auth.token);
+      }
+
+      forgetLocalScreening(screeningId);
+      saveReservations(getReservations().filter((reservation) => !idsEqual(reservation.screeningId, screeningId)));
+      saveScheduleMeta(nextMeta);
+      setMeta(nextMeta);
+      setDeletedKeys(getDeletedScreeningOccurrences());
+      setSelectedId('');
+      setForm({ ...defaultScheduleMeta, date: todayDateValue() });
+      setMessage('Vetítés törölve. A hozzá tartozó helyi foglalások is törlődtek, és a felhasználói műsorban sem jelenik meg tovább.');
+      await loadData();
+    } catch (err) {
+      if (screening?.localOnly) {
+        forgetLocalScreening(screeningId);
+        saveReservations(getReservations().filter((reservation) => !idsEqual(reservation.screeningId, screeningId)));
+        saveScheduleMeta(nextMeta);
+        setMeta(nextMeta);
+        setDeletedKeys(getDeletedScreeningOccurrences());
+        setSelectedId('');
+        setForm({ ...defaultScheduleMeta, date: todayDateValue() });
+        setData((current) => ({
+          ...current,
+          screenings: current.screenings.filter((item) => !idsEqual(item.id, screeningId)),
+        }));
+        setMessage('A helyi vetítés és a hozzá tartozó helyi foglalások törölve.');
+        return;
+      }
+      setError(err.message);
+    }
+  }
+
+  const visibleScheduleScreenings = scheduleFilterDate
+    ? scheduleScreenings.filter((screening) => getScreeningDate(screening, meta) === scheduleFilterDate)
+    : scheduleScreenings;
+
+  const rows = visibleScheduleScreenings.map((screening) => {
     const movie = getScreeningMovie(screening, data.movies);
     const hall = getScreeningHall(screening, data.halls);
     const info = getScheduleInfo(screening.id, meta);
@@ -2864,7 +3077,7 @@ function ScheduleEditor({ auth }) {
             Vetítés
             <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
               <option value="">Válassz...</option>
-              {data.screenings.map((screening) => {
+              {scheduleScreenings.map((screening) => {
                 const movie = getScreeningMovie(screening, data.movies);
                 const hall = getScreeningHall(screening, data.halls);
                 return <option key={screening.id} value={screening.id}>{movie?.name || screening.movie_id} · {getScreeningDate(screening, meta)} · {timeToText(screening.time)} · {hall?.name || '-'}</option>;
@@ -2876,11 +3089,27 @@ function ScheduleEditor({ auth }) {
           <label>Reklám perc<input type="number" min="0" value={form.ads} onChange={(e) => setForm({ ...form, ads: e.target.value })} /></label>
           <label>Előzetes perc<input type="number" min="0" value={form.trailers} onChange={(e) => setForm({ ...form, trailers: e.target.value })} /></label>
           <label>Takarítás perc<input type="number" min="0" value={form.cleaning} onChange={(e) => setForm({ ...form, cleaning: e.target.value })} /></label>
-          <div className="form-actions"><button className="primary" type="submit">Mentés</button></div>
+          <div className="form-actions">
+            <button className="primary" type="submit">Mentés</button>
+            <button className="danger" type="button" disabled={!selectedId} onClick={() => deleteShowtime(selectedId)}>Kiválasztott vetítés törlése</button>
+          </div>
         </form>
       </section>
       <section className="card">
-        <h3>Aktuális ütemezési táblázat</h3>
+        <div className="card-title-row">
+          <div>
+            <h3>Összes jövőbeli ütemezési táblázat</h3>
+            <p className="muted">A táblázatból közvetlenül törölhető bármelyik napi vetítés, nem csak a mai nap.</p>
+          </div>
+          <span className="badge">{rows.length} vetítés</span>
+        </div>
+        <div className="search-bar">
+          <label>
+            Dátum szűrés
+            <input type="date" min={todayDateValue()} value={scheduleFilterDate} onChange={(e) => setScheduleFilterDate(e.target.value)} />
+          </label>
+          {scheduleFilterDate && <button type="button" onClick={() => setScheduleFilterDate('')}>Minden nap mutatása</button>}
+        </div>
         <DataTable
           columns={[
             ['movie', 'Film'],
@@ -2895,6 +3124,7 @@ function ScheduleEditor({ auth }) {
             ['blocked', 'Terem foglalva'],
           ]}
           rows={rows}
+          actions={(row) => <button className="danger" type="button" onClick={() => deleteShowtime(row.id)}>Törlés</button>}
         />
       </section>
     </>

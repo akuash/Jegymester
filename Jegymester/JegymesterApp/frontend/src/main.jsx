@@ -260,7 +260,12 @@ function getReservations() {
 }
 
 function saveReservations(reservations) {
-  writeStorage(RESERVATIONS_KEY, reservations);
+  const normalized = (reservations || []).map((reservation) => ({
+    ...reservation,
+    seats: Array.isArray(reservation?.seats) ? reservation.seats : [],
+  }));
+  writeStorage(RESERVATIONS_KEY, normalized);
+  window.dispatchEvent(new Event('jegymester-reservations-changed'));
 }
 
 function getHallConfigs() {
@@ -448,6 +453,20 @@ function getTakenSeats(screeningId, reservations = getReservations()) {
   return reservations
     .filter((reservation) => idsEqual(reservation.screeningId, screeningId) && reservation.status !== 'cancelled')
     .flatMap((reservation) => reservation.seats || []);
+}
+
+function getSeatReservations(screeningId, reservations = getReservations()) {
+  return reservations
+    .filter((reservation) => idsEqual(reservation.screeningId, screeningId) && reservation.status !== 'cancelled')
+    .flatMap((reservation) => (reservation.seats || []).map((seat) => ({
+      reservation,
+      seat,
+    })));
+}
+
+function getReservedSeatsText(screeningId, reservations = getReservations()) {
+  const seats = getSeatReservations(screeningId, reservations).map(({ seat }) => seat);
+  return seats.length ? seats.join(', ') : '-';
 }
 
 function getFreeSeats(screeningId, hall, reservations, hallConfigs) {
@@ -1553,12 +1572,20 @@ function BookingPage({ auth }) {
       loadHomeData();
     }
 
+    function refreshSeatState() {
+      setReservations(getReservations());
+      setHallConfigs(getHallConfigs());
+      setScheduleMeta(getScheduleMeta());
+    }
+
     window.addEventListener('storage', onStorage);
     window.addEventListener('jegymester-local-catalog-changed', onLocalCatalogChanged);
+    window.addEventListener('jegymester-reservations-changed', refreshSeatState);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('jegymester-local-catalog-changed', onLocalCatalogChanged);
+      window.removeEventListener('jegymester-reservations-changed', refreshSeatState);
     };
   }, []);
 
@@ -2069,7 +2096,7 @@ function CashierPage({ auth }) {
   const [error, setError] = useState('');
 
   const selectedReservation = reservations.find((reservation) => reservation.code === selectedCode && reservation.status !== 'cancelled');
-  const selectedScreening = selectedReservation ? data.screenings.find((screening) => Number(screening.id) === Number(selectedReservation.screeningId)) : null;
+  const selectedScreening = selectedReservation ? data.screenings.find((screening) => idsEqual(screening.id, selectedReservation.screeningId)) : null;
   const selectedHall = selectedScreening ? getScreeningHall(selectedScreening, data.halls) : null;
   const selectedHallConfig = selectedHall ? hallConfigs[selectedHall.id] || {} : {};
   const seatCount = selectedReservation?.seats?.length || 0;
@@ -2078,13 +2105,27 @@ function CashierPage({ auth }) {
     ? getTakenSeats(selectedScreening.id, reservations).filter((seat) => !selectedReservation?.seats?.includes(seat))
     : [];
 
-  const cashierSelectedScreening = data.screenings.find((screening) => Number(screening.id) === Number(cashierSale.screeningId));
+  const cashierSelectedScreening = data.screenings.find((screening) => idsEqual(screening.id, cashierSale.screeningId));
   const cashierSelectedHall = cashierSelectedScreening ? getScreeningHall(cashierSelectedScreening, data.halls) : null;
   const cashierSelectedMovie = cashierSelectedScreening ? getScreeningMovie(cashierSelectedScreening, data.movies) : null;
   const cashierHallConfig = cashierSelectedHall ? hallConfigs[cashierSelectedHall.id] || {} : {};
   const cashierSeatsAll = cashierSelectedHall ? generateSeats(getHallEffectiveCapacity(cashierSelectedHall, hallConfigs)) : [];
   const cashierTakenSeats = cashierSelectedScreening ? getTakenSeats(cashierSelectedScreening.id, reservations) : [];
   const cashierTotal = calculateTotal(cashierSale.category, cashierSaleSeats, cashierHallConfig);
+  const activeCashierOrders = reservations
+    .filter((reservation) => reservation.status !== 'cancelled')
+    .map((reservation) => ({
+      id: reservation.id,
+      code: reservation.code,
+      movie: reservation.movieName || '-',
+      date: reservation.screeningDate || '-',
+      time: timeToText(reservation.time),
+      hall: reservation.hallName || '-',
+      seats: (reservation.seats || []).join(', ') || '-',
+      status: getOrderStatusLabel(reservation),
+      buyer: reservation.userName || reservation.guestEmail || '-',
+      source: reservation.source === 'registered-user' ? 'user felület' : reservation.source === 'cashier-sale' ? 'pénztár' : reservation.source || '-',
+    }));
 
   async function loadCashierData() {
     setError('');
@@ -2107,13 +2148,43 @@ function CashierPage({ auth }) {
     loadCashierData();
   }, [auth.token]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setReservations(getReservations());
+      setHallConfigs(getHallConfigs());
+      setScheduleMeta(getScheduleMeta());
+    }, 3000);
+
+    function refreshCashierSeatState() {
+      setReservations(getReservations());
+      setHallConfigs(getHallConfigs());
+      setScheduleMeta(getScheduleMeta());
+    }
+
+    function onStorage(event) {
+      if ([RESERVATIONS_KEY, HALL_CONFIG_KEY, SCHEDULE_META_KEY, LOCAL_MOVIES_KEY, LOCAL_SCREENINGS_KEY, DELETED_SCREENING_OCCURRENCES_KEY].includes(event.key)) {
+        refreshCashierSeatState();
+      }
+    }
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('jegymester-reservations-changed', refreshCashierSeatState);
+    window.addEventListener('jegymester-local-catalog-changed', loadCashierData);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('jegymester-reservations-changed', refreshCashierSeatState);
+      window.removeEventListener('jegymester-local-catalog-changed', loadCashierData);
+    };
+  }, []);
+
   function findReservation(event) {
     event.preventDefault();
     const normalized = code.trim().toUpperCase();
     const found = getReservations().find((reservation) => reservation.code === normalized && reservation.status !== 'cancelled');
     setReservations(getReservations());
     setSelectedCode(found?.code || '');
-    setNewSeats([]);
+    setNewSeats(found?.seats || []);
     setMessage('');
     setError(found ? '' : 'Nincs ilyen aktív foglalási kód.');
   }
@@ -2157,6 +2228,14 @@ function CashierPage({ auth }) {
       return;
     }
     const hallConfig = getHallConfigs()[selectedHall.id] || {};
+    const blockedByOther = new Set(getTakenSeats(selectedScreening.id, getReservations()).filter((seat) => !selectedReservation.seats?.includes(seat)));
+    const closedSeats = new Set(hallConfig.closedSeats || []);
+    const conflictSeat = newSeats.find((seat) => blockedByOther.has(seat) || closedSeats.has(seat));
+    if (conflictSeat) {
+      setReservations(getReservations());
+      setError(`A(z) ${conflictSeat} hely már foglalt vagy le van zárva.`);
+      return;
+    }
     updateReservation(selectedReservation.code, (reservation) => ({
       ...reservation,
       seats: newSeats,
@@ -2268,6 +2347,25 @@ function CashierPage({ auth }) {
       <Message message={message} type="success" />
 
       <section className="card">
+        <h3>User felületről érkező aktív foglalások és jegyek</h3>
+        <p className="muted">Itt látszanak azok a székek is, amelyeket a felhasználó foglalásnál vagy online jegyvásárlásnál kiválasztott.</p>
+        <DataTable
+          columns={[
+            ['code', 'Kód'],
+            ['movie', 'Film'],
+            ['date', 'Dátum'],
+            ['time', 'Idő'],
+            ['hall', 'Terem'],
+            ['seats', 'Foglalt/megvett székek'],
+            ['status', 'Állapot'],
+            ['buyer', 'Vevő'],
+            ['source', 'Forrás'],
+          ]}
+          rows={activeCashierOrders}
+        />
+      </section>
+
+      <section className="card">
         <h3>Helyszíni jegyvásárlás rögzítése</h3>
         <p className="muted">Ezt csak pénztáros használhatja: a vevő helyben fizet, a jegy azonnal fizetett állapotba kerül.</p>
         <div className="grid-form">
@@ -2319,9 +2417,9 @@ function CashierPage({ auth }) {
 
         {selectedReservation && (
           <div className="reservation-details">
-            <h4>{selectedReservation.movieName} · {timeToText(selectedReservation.time)}</h4>
-            <p><strong>Vendég:</strong> {selectedReservation.userName} · <strong>Kód:</strong> {selectedReservation.code}</p>
-            <p><strong>Helyek:</strong> {selectedReservation.seats.join(', ')} · <strong>Összeg:</strong> {selectedReservation.total} Ft · <strong>Állapot:</strong> {selectedReservation.status === 'paid' ? 'fizetve' : 'lefoglalva'}</p>
+            <h4>{selectedReservation.movieName} · {selectedReservation.screeningDate} {timeToText(selectedReservation.time)}</h4>
+            <p><strong>Vendég:</strong> {selectedReservation.userName} · <strong>Kód:</strong> {selectedReservation.code} · <strong>Terem:</strong> {selectedReservation.hallName}</p>
+            <p><strong>User által foglalt/megvett helyek:</strong> {(selectedReservation.seats || []).join(', ')} · <strong>Összeg:</strong> {selectedReservation.total} Ft · <strong>Állapot:</strong> {selectedReservation.status === 'paid' ? 'fizetve' : 'lefoglalva'}</p>
             <div className="form-actions">
               <button className="primary" onClick={finalizeReservation}>Véglegesítés / jegyek kiadása</button>
               <button onClick={releaseReservation}>Helyfelszabadítás</button>
@@ -2334,7 +2432,7 @@ function CashierPage({ auth }) {
       {selectedReservation && selectedHall && (
         <section className="card">
           <h3>Helycsere</h3>
-          <p className="muted">Jelölj ki pontosan {seatCount} új szabad helyet. A régi helyek ilyenkor felszabadulnak.</p>
+          <p className="muted">A kékkel kijelölt helyek a user által jelenleg foglalt/megvett székek. Helycseréhez hagyd meg vagy jelölj ki pontosan {seatCount} új szabad helyet.</p>
           <SeatGrid
             seats={seatsAll}
             selectedSeats={newSeats}
@@ -2358,7 +2456,8 @@ function CashierPage({ auth }) {
             ['time', 'Kezdés'],
             ['hall', 'Terem'],
             ['free', 'Szabad hely'],
-            ['occupied', 'Foglalt'],
+            ['occupied', 'Foglalt db'],
+            ['reservedSeats', 'Foglalt székek'],
             ['runtime', 'Film reklámokkal'],
             ['blocked', 'Terem foglalva'],
           ]}
@@ -2374,6 +2473,7 @@ function CashierPage({ auth }) {
               hall: hall?.name || '-',
               free: availability.soldOut ? 'Elfogyott' : `${availability.free} / ${availability.capacity}`,
               occupied: availability.taken,
+              reservedSeats: getReservedSeatsText(screening.id, reservations),
               runtime: `${info.total} perc`,
               blocked: `${info.roomBlocked} perc`,
             };

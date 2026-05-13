@@ -752,6 +752,17 @@ function getReservationScreeningDateTime(reservation) {
   return getScreeningDateTimeFromParts(reservation?.screeningDate, reservation?.time);
 }
 
+function isReservationStillValid(reservation) {
+  if (!reservation || reservation.status === 'cancelled') return false;
+  const screeningAt = getReservationScreeningDateTime(reservation);
+
+  if (Number.isNaN(screeningAt.getTime())) {
+    return !isPastDateValue(reservation?.screeningDate);
+  }
+
+  return screeningAt.getTime() >= Date.now();
+}
+
 function canCancelTicketOrder(reservation) {
   const screeningAt = getReservationScreeningDateTime(reservation);
   if (Number.isNaN(screeningAt.getTime())) return true;
@@ -2095,9 +2106,21 @@ function CashierPage({ auth }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const selectedReservation = reservations.find((reservation) => reservation.code === selectedCode && reservation.status !== 'cancelled');
-  const selectedScreening = selectedReservation ? data.screenings.find((screening) => idsEqual(screening.id, selectedReservation.screeningId)) : null;
-  const selectedHall = selectedScreening ? getScreeningHall(selectedScreening, data.halls) : null;
+  const selectedReservation = reservations.find((reservation) => reservation.code === selectedCode && isReservationStillValid(reservation));
+  const selectedScreening = selectedReservation
+    ? data.screenings.find((screening) => idsEqual(screening.id, selectedReservation.screeningId)) || {
+      id: selectedReservation.screeningId,
+      time: selectedReservation.time,
+      date: selectedReservation.screeningDate,
+      hall_id: selectedReservation.hallId,
+      movie_id: selectedReservation.movieId,
+    }
+    : null;
+  const selectedHall = selectedReservation
+    ? getScreeningHall(selectedScreening, data.halls)
+      || data.halls.find((hall) => idsEqual(hall.id ?? hall.hall_id, selectedReservation.hallId))
+      || { id: selectedReservation.hallId || 'cashier-hall', name: selectedReservation.hallName || 'Terem', capacity: MAX_HALL_CAPACITY }
+    : null;
   const selectedHallConfig = selectedHall ? hallConfigs[selectedHall.id] || {} : {};
   const seatCount = selectedReservation?.seats?.length || 0;
   const seatsAll = selectedHall ? generateSeats(getHallEffectiveCapacity(selectedHall, hallConfigs)) : [];
@@ -2113,7 +2136,8 @@ function CashierPage({ auth }) {
   const cashierTakenSeats = cashierSelectedScreening ? getTakenSeats(cashierSelectedScreening.id, reservations) : [];
   const cashierTotal = calculateTotal(cashierSale.category, cashierSaleSeats, cashierHallConfig);
   const activeCashierOrders = reservations
-    .filter((reservation) => reservation.status !== 'cancelled')
+    .filter(isReservationStillValid)
+    .sort((left, right) => getReservationScreeningDateTime(left).getTime() - getReservationScreeningDateTime(right).getTime())
     .map((reservation) => ({
       id: reservation.id,
       code: reservation.code,
@@ -2178,15 +2202,23 @@ function CashierPage({ auth }) {
     };
   }, []);
 
+  function selectReservationForSeatChange(reservationOrCode) {
+    const normalized = typeof reservationOrCode === 'string'
+      ? reservationOrCode.trim().toUpperCase()
+      : String(reservationOrCode?.code || '').trim().toUpperCase();
+    const latestReservations = getReservations();
+    const found = latestReservations.find((reservation) => reservation.code === normalized && isReservationStillValid(reservation));
+    setReservations(latestReservations);
+    setCode(normalized);
+    setSelectedCode(found?.code || '');
+    setNewSeats([...(found?.seats || [])]);
+    setMessage(found ? 'Foglalás kiválasztva. A helycserénél kattints az új szabad székre, a rendszer lecseréli a régi helyet.' : '');
+    setError(found ? '' : 'Nincs ilyen aktív és még érvényes foglalási kód. Elmúlt vetítést már nem lehet helycserére kiválasztani.');
+  }
+
   function findReservation(event) {
     event.preventDefault();
-    const normalized = code.trim().toUpperCase();
-    const found = getReservations().find((reservation) => reservation.code === normalized && reservation.status !== 'cancelled');
-    setReservations(getReservations());
-    setSelectedCode(found?.code || '');
-    setNewSeats(found?.seats || []);
-    setMessage('');
-    setError(found ? '' : 'Nincs ilyen aktív foglalási kód.');
+    selectReservationForSeatChange(code);
   }
 
   function updateReservation(codeToUpdate, updater) {
@@ -2214,37 +2246,52 @@ function CashierPage({ auth }) {
   }
 
   function toggleNewSeat(seat) {
+    setError('');
     setNewSeats((current) => {
       if (current.includes(seat)) return current.filter((item) => item !== seat);
-      if (current.length >= seatCount) return current;
-      return [...current, seat];
+      if (current.length < seatCount) return [...current, seat];
+
+      const originalSeats = selectedReservation?.seats || [];
+      const replaceIndex = current.findIndex((item) => originalSeats.includes(item));
+      const safeIndex = replaceIndex >= 0 ? replaceIndex : 0;
+      return current.map((item, index) => index === safeIndex ? seat : item);
     });
   }
 
   function changeSeats() {
     if (!selectedReservation) return;
+    if (!selectedScreening || !selectedHall) {
+      setError('Nem található a foglaláshoz tartozó vetítés vagy terem, ezért a helycsere nem menthető. Frissítsd a pénztáros oldalt.');
+      return;
+    }
     if (newSeats.length !== seatCount) {
       setError(`Pont ${seatCount} új helyet kell kijelölni.`);
       return;
     }
+    const uniqueNewSeats = [...new Set(newSeats)];
+    if (uniqueNewSeats.length !== seatCount) {
+      setError('Ugyanazt a széket nem lehet kétszer kijelölni.');
+      return;
+    }
     const hallConfig = getHallConfigs()[selectedHall.id] || {};
-    const blockedByOther = new Set(getTakenSeats(selectedScreening.id, getReservations()).filter((seat) => !selectedReservation.seats?.includes(seat)));
+    const latestReservations = getReservations();
+    const blockedByOther = new Set(getTakenSeats(selectedScreening.id, latestReservations).filter((seat) => !selectedReservation.seats?.includes(seat)));
     const closedSeats = new Set(hallConfig.closedSeats || []);
-    const conflictSeat = newSeats.find((seat) => blockedByOther.has(seat) || closedSeats.has(seat));
+    const conflictSeat = uniqueNewSeats.find((seat) => blockedByOther.has(seat) || closedSeats.has(seat));
     if (conflictSeat) {
-      setReservations(getReservations());
+      setReservations(latestReservations);
       setError(`A(z) ${conflictSeat} hely már foglalt vagy le van zárva.`);
       return;
     }
     updateReservation(selectedReservation.code, (reservation) => ({
       ...reservation,
-      seats: newSeats,
-      total: calculateTotal(reservation.category, newSeats, hallConfig),
+      seats: uniqueNewSeats,
+      total: calculateTotal(reservation.category, uniqueNewSeats, hallConfig),
       changedAt: new Date().toISOString(),
     }));
-    setMessage('Helycsere megtörtént.');
+    setNewSeats(uniqueNewSeats);
+    setMessage(`Helycsere megtörtént. Új helyek: ${uniqueNewSeats.join(', ')}.`);
     setError('');
-    setNewSeats([]);
   }
 
 
@@ -2348,7 +2395,7 @@ function CashierPage({ auth }) {
 
       <section className="card">
         <h3>User felületről érkező aktív foglalások és jegyek</h3>
-        <p className="muted">Itt látszanak azok a székek is, amelyeket a felhasználó foglalásnál vagy online jegyvásárlásnál kiválasztott.</p>
+        <p className="muted">Itt csak a mai és jövőbeli, még érvényes foglalások/jegyek látszanak. Az elmúlt dátumú vagy már elkezdődött vetítések nem jelennek meg.</p>
         <DataTable
           columns={[
             ['code', 'Kód'],
@@ -2362,6 +2409,7 @@ function CashierPage({ auth }) {
             ['source', 'Forrás'],
           ]}
           rows={activeCashierOrders}
+          actions={(row) => <button type="button" onClick={() => selectReservationForSeatChange(row.code)}>Helycsere</button>}
         />
       </section>
 
@@ -2432,7 +2480,8 @@ function CashierPage({ auth }) {
       {selectedReservation && selectedHall && (
         <section className="card">
           <h3>Helycsere</h3>
-          <p className="muted">A kékkel kijelölt helyek a user által jelenleg foglalt/megvett székek. Helycseréhez hagyd meg vagy jelölj ki pontosan {seatCount} új szabad helyet.</p>
+          <p className="muted">A kékkel kijelölt helyek a user által jelenleg foglalt/megvett székek. Kattints egy új szabad székre: ha már ki van jelölve a szükséges darabszám, a rendszer automatikusan lecseréli az egyik régi helyet. Mentéshez pontosan {seatCount} hely legyen kijelölve.</p>
+          <p><strong>Jelenlegi új kijelölés:</strong> {newSeats.length ? newSeats.join(', ') : '-'}</p>
           <SeatGrid
             seats={seatsAll}
             selectedSeats={newSeats}
@@ -2442,8 +2491,9 @@ function CashierPage({ auth }) {
             onToggleSeat={toggleNewSeat}
           />
           <div className="form-actions">
-            <button className="primary" onClick={changeSeats}>Helycsere mentése</button>
-            <button onClick={() => setNewSeats([])}>Kijelölés törlése</button>
+            <button className="primary" type="button" onClick={changeSeats}>Helycsere mentése</button>
+            <button type="button" onClick={() => setNewSeats([...(selectedReservation?.seats || [])])}>Eredeti helyek visszaállítása</button>
+            <button type="button" onClick={() => setNewSeats([])}>Kijelölés törlése</button>
           </div>
         </section>
       )}

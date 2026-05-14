@@ -785,7 +785,7 @@ function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
     }));
   }).flat();
 
-  const expandedScreenings = [...explicitScreenings, ...recurringScreenings]
+  const expandedScreenings = getUpcomingScreenings([...explicitScreenings, ...recurringScreenings], scheduleMeta)
     .filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta))
     .sort(compareScreeningsByDateTime);
   const resolved = resolveCatalogHallConflicts(catalog, expandedScreenings, scheduleMeta);
@@ -816,7 +816,7 @@ function uniqueScreeningTemplates(screenings = []) {
 
 function screeningsCoveringDate(catalog, targetDate) {
   const scheduleMeta = getScheduleMeta();
-  const visibleScreenings = (catalog.screenings || [])
+  const visibleScreenings = getUpcomingScreenings(catalog.screenings || [], scheduleMeta)
     .filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta));
 
   let screeningsForDate = visibleScreenings;
@@ -869,6 +869,20 @@ function isScreeningInPast(screening, meta = getScheduleMeta()) {
   const screeningAt = getScreeningDateTimeFromParts(screeningDate, screening?.time);
   if (Number.isNaN(screeningAt.getTime())) return false;
   return screeningAt.getTime() <= Date.now();
+}
+
+function isUpcomingScreening(screening, meta = getScheduleMeta()) {
+  if (!screening) return false;
+  const screeningDate = getScreeningDate(screening, meta);
+
+  // A publikus műsorban és a vendégvásárlásnál múltbeli nap nem jelenhet meg.
+  // Mai dátumnál a már elkezdődött vetítést is elrejtjük.
+  if (isPastDateValue(screeningDate)) return false;
+  return !isScreeningInPast(screening, meta);
+}
+
+function getUpcomingScreenings(screenings = [], meta = getScheduleMeta()) {
+  return (screenings || []).filter((screening) => isUpcomingScreening(screening, meta));
 }
 
 function handleFutureDateFilter(value, setFilters, filters, setError) {
@@ -1175,7 +1189,7 @@ function PublicCatalog({ onGoLogin }) {
       const movieText = normalizeSearchText(`${movie?.name || ''} ${movie?.description || ''}`);
       const hallText = hall?.name || '';
       const dateText = getScreeningDate(screening, scheduleMeta);
-      if (isScreeningInPast(screening, scheduleMeta)) return false;
+      if (!isUpcomingScreening(screening, scheduleMeta)) return false;
       if (movieQuery && !movieText.includes(movieQuery)) return false;
       if (filters.date && dateText !== filters.date) return false;
       if (filters.dayPart && getDayPart(screening.time) !== filters.dayPart) return false;
@@ -1216,6 +1230,13 @@ function PublicCatalog({ onGoLogin }) {
   useEffect(() => {
     setSelectedSeats([]);
   }, [selectedScreeningId]);
+
+  useEffect(() => {
+    if (selectedScreeningId && !filteredScreenings.some((screening) => idsEqual(screening.id, selectedScreeningId))) {
+      setSelectedScreeningId(null);
+      setSelectedSeats([]);
+    }
+  }, [selectedScreeningId, filteredScreenings]);
 
   function autoSelectGuestSeats() {
     if (!selectedScreening || !selectedHall) return;
@@ -1316,7 +1337,7 @@ function PublicCatalog({ onGoLogin }) {
             <label>Mozihelyszín<select value={filters.hall} onChange={(e) => setFilters({ ...filters, hall: e.target.value })}><option value="">Mindegy</option>{hallNames.map((hallName) => <option key={hallName} value={hallName}>{hallName}</option>)}</select></label>
           </div>
           <div className="quick-date-row">
-            <button type="button" className={!filters.date ? 'active' : ''} onClick={() => setFilters({ ...filters, date: '' })}>Minden dátum</button>
+            <button type="button" className={!filters.date ? 'active' : ''} onClick={() => setFilters({ ...filters, date: '' })}>Mai és jövőbeli dátumok</button>
             {scheduleDates.slice(0, 10).map((dateValue) => (
               <button key={dateValue} type="button" className={filters.date === dateValue ? 'active' : ''} onClick={() => setFilters({ ...filters, date: dateValue })}>{formatDateHu(dateValue)}</button>
             ))}
@@ -1344,7 +1365,7 @@ function PublicCatalog({ onGoLogin }) {
                 </article>
               );
             })}
-            {filteredScreenings.length === 0 && <p>Nincs jövőbeli találat. Válassz mai későbbi vagy jövőbeli dátumot, vagy töröld a dátumszűrést.</p>}
+            {filteredScreenings.length === 0 && <p>Nincs jövőbeli találat. Elmúlt napok nem jelennek meg, válassz mai későbbi vagy jövőbeli dátumot.</p>}
           </section>
           {selectedScreening && selectedHall && selectedMovie && (
             <section className="card nested-card">
@@ -1657,7 +1678,7 @@ function BookingPage({ auth }) {
       const hallText = hall?.name || '';
       const dateText = getScreeningDate(screening, scheduleMeta);
 
-      if (isScreeningInPast(screening, scheduleMeta)) return false;
+      if (!isUpcomingScreening(screening, scheduleMeta)) return false;
       if (movieQuery && !movieText.includes(movieQuery)) return false;
       if (filters.date && dateText !== filters.date) return false;
       if (filters.dayPart && getDayPart(screening.time) !== filters.dayPart) return false;
@@ -1738,6 +1759,14 @@ function BookingPage({ auth }) {
     setSelectedSeats([]);
     setShowPaymentForm(false);
   }, [selectedScreeningId]);
+
+  useEffect(() => {
+    if (selectedScreeningId && !filteredScreenings.some((screening) => idsEqual(screening.id, selectedScreeningId))) {
+      setSelectedScreeningId(null);
+      setSelectedSeats([]);
+      setShowPaymentForm(false);
+    }
+  }, [selectedScreeningId, filteredScreenings]);
 
   if (!isRegularUser(auth)) {
     return (
@@ -2024,7 +2053,7 @@ function BookingPage({ auth }) {
               </label>
             </div>
             <div className="quick-date-row">
-              <button type="button" className={!filters.date ? 'active' : ''} onClick={() => setFilters({ ...filters, date: '' })}>Minden dátum</button>
+              <button type="button" className={!filters.date ? 'active' : ''} onClick={() => setFilters({ ...filters, date: '' })}>Mai és jövőbeli dátumok</button>
               {scheduleDates.slice(0, 10).map((dateValue) => (
                 <button key={dateValue} type="button" className={filters.date === dateValue ? 'active' : ''} onClick={() => setFilters({ ...filters, date: dateValue })}>{formatDateHu(dateValue)}</button>
               ))}

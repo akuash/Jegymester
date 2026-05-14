@@ -415,7 +415,16 @@ function getScreeningHallId(screening) {
 
 function getScreeningHall(screening, halls = []) {
   const hallId = getScreeningHallId(screening);
-  return screening?.hall || halls.find((hall) => idsEqual(hall.id ?? hall.hall_id, hallId)) || null;
+  const embeddedHall = screening?.hall || null;
+  const listedHall = halls.find((hall) => idsEqual(hall.id ?? hall.hall_id, hallId)) || null;
+
+  // Fontos: ha a teremütközés-kezelés átírta a hall_id-t, ne a régi beágyazott hall
+  // objektumot mutassuk a usernél, hanem a hall_id szerinti, ténylegesen érvényes termet.
+  if (listedHall) return listedHall;
+  if (embeddedHall && (hallId === undefined || hallId === null || idsEqual(embeddedHall.id ?? embeddedHall.hall_id, hallId))) {
+    return embeddedHall;
+  }
+  return embeddedHall || null;
 }
 
 function timeToText(time) {
@@ -666,15 +675,23 @@ function getScheduleInfoForScreening(screening, meta = getScheduleMeta()) {
 }
 
 function resolveCatalogHallConflicts(catalog, screenings, scheduleMeta = getScheduleMeta()) {
-  const resolvedHalls = [...(catalog.halls.length ? catalog.halls : publicDemoData.halls)];
+  const baseHalls = catalog.halls.length ? catalog.halls : publicDemoData.halls;
+  const resolvedHalls = [...baseHalls];
   const occupiedSlots = [];
   let autoHallCounter = 1;
 
   const getHallKey = (hall) => hall?.id ?? hall?.hall_id;
+  const makeHallKey = (hallId) => normalizeId(hallId);
+  const findHallById = (hallId) => resolvedHalls.find((hall) => idsEqual(getHallKey(hall), hallId));
   const createAutoHall = (preferredHall) => {
     const capacity = getHallEffectiveCapacity(preferredHall || { capacity: MAX_HALL_CAPACITY });
+    let id = `auto-hall-${autoHallCounter}`;
+    while (resolvedHalls.some((hall) => idsEqual(getHallKey(hall), id))) {
+      autoHallCounter += 1;
+      id = `auto-hall-${autoHallCounter}`;
+    }
     const hall = {
-      id: `auto-hall-${autoHallCounter}`,
+      id,
       name: `${autoHallCounter}. automatikus tartalék terem`,
       capacity,
       autoCreatedForConflict: true,
@@ -684,46 +701,62 @@ function resolveCatalogHallConflicts(catalog, screenings, scheduleMeta = getSche
     return hall;
   };
 
-  const resolvedScreenings = [...screenings]
-    .sort(compareScreeningsByDateTime)
-    .map((screening) => {
-      const preferredHallId = getScreeningHallId(screening);
-      const preferredHall = resolvedHalls.find((hall) => idsEqual(getHallKey(hall), preferredHallId));
-      const candidates = [
-        ...(preferredHall ? [preferredHall] : []),
-        ...resolvedHalls.filter((hall) => !idsEqual(getHallKey(hall), preferredHallId)),
-      ];
-      const date = getScreeningDate(screening, scheduleMeta);
-      const bounds = getScheduleSlotBounds(date, screening.time, getScheduleInfoForScreening(screening, scheduleMeta));
+  const sortedScreenings = [...(screenings || [])].sort((left, right) => {
+    const byDateTime = compareScreeningsByDateTime(left, right);
+    if (byDateTime !== 0) return byDateTime;
+    return normalizeId(left?.id).localeCompare(normalizeId(right?.id));
+  });
 
-      let selectedHall = candidates.find((hall) => {
-        const hallId = getHallKey(hall);
-        return !occupiedSlots.some((slot) => (
-          slot.date === date
-          && idsEqual(slot.hallId, hallId)
-          && scheduleSlotsOverlap(slot.bounds, bounds)
-        ));
-      });
+  const resolvedScreenings = sortedScreenings.map((screening) => {
+    const preferredHallId = getScreeningHallId(screening);
+    const preferredHall = findHallById(preferredHallId) || screening?.hall || null;
+    if (preferredHall && !findHallById(getHallKey(preferredHall))) {
+      resolvedHalls.push(preferredHall);
+    }
 
-      if (!selectedHall) {
-        selectedHall = createAutoHall(preferredHall);
-      }
+    const candidates = [
+      ...(preferredHall ? [findHallById(getHallKey(preferredHall)) || preferredHall] : []),
+      ...resolvedHalls.filter((hall) => !idsEqual(getHallKey(hall), preferredHallId)),
+    ].filter(Boolean);
 
-      const selectedHallId = getHallKey(selectedHall);
-      occupiedSlots.push({ date, hallId: selectedHallId, bounds, screeningId: screening.id });
+    const date = getScreeningDate(screening, scheduleMeta);
+    const bounds = getScheduleSlotBounds(date, screening.time, getScheduleInfoForScreening(screening, scheduleMeta));
 
-      const switched = preferredHallId !== undefined && preferredHallId !== null && !idsEqual(selectedHallId, preferredHallId);
-      return {
-        ...screening,
-        hall_id: selectedHallId,
-        hall: selectedHall,
-        originalHallId: screening.originalHallId ?? preferredHallId,
-        originalHallName: screening.originalHallName ?? preferredHall?.name ?? screening?.hall?.name ?? '',
-        autoHallSwitched: Boolean(screening.autoHallSwitched || switched),
-      };
+    let selectedHall = candidates.find((hall) => {
+      const hallId = getHallKey(hall);
+      return !occupiedSlots.some((slot) => (
+        slot.date === date
+        && makeHallKey(slot.hallId) === makeHallKey(hallId)
+        && scheduleSlotsOverlap(slot.bounds, bounds)
+      ));
     });
 
+    if (!selectedHall) {
+      selectedHall = createAutoHall(preferredHall || resolvedHalls[0]);
+    }
+
+    const selectedHallId = getHallKey(selectedHall);
+    occupiedSlots.push({ date, hallId: selectedHallId, bounds, screeningId: screening.id });
+
+    const switched = preferredHallId !== undefined && preferredHallId !== null && !idsEqual(selectedHallId, preferredHallId);
+    return {
+      ...screening,
+      hall_id: selectedHallId,
+      hall: selectedHall,
+      originalHallId: screening.originalHallId ?? preferredHallId,
+      originalHallName: screening.originalHallName ?? preferredHall?.name ?? screening?.hall?.name ?? '',
+      autoHallSwitched: Boolean(screening.autoHallSwitched || switched),
+      hallConflictChecked: true,
+    };
+  });
+
   return { halls: resolvedHalls, screenings: resolvedScreenings };
+}
+
+function getCollisionFreeScreeningsForUser(catalog, screenings, scheduleMeta = getScheduleMeta()) {
+  // A user oldalon ez a végső biztonsági ellenőrzés: minden megjelenítés előtt
+  // dátum + terem + teljes blokkolt idő alapján újraosztjuk a termeket.
+  return resolveCatalogHallConflicts(catalog, screenings, scheduleMeta).screenings;
 }
 
 function buildDailyCatalog(rawData, days = PUBLIC_DAYS_AHEAD) {
@@ -786,20 +819,25 @@ function screeningsCoveringDate(catalog, targetDate) {
   const visibleScreenings = (catalog.screenings || [])
     .filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta));
 
-  if (!targetDate) return visibleScreenings;
-  const hasTargetDate = visibleScreenings.some((screening) => getScreeningDate(screening, scheduleMeta) === targetDate);
-  if (hasTargetDate) return visibleScreenings;
+  let screeningsForDate = visibleScreenings;
+  if (targetDate) {
+    const hasTargetDate = visibleScreenings.some((screening) => getScreeningDate(screening, scheduleMeta) === targetDate);
 
-  const templates = uniqueScreeningTemplates(visibleScreenings.length ? visibleScreenings : publicDemoData.screenings);
-  const dateHash = dateHashForScreeningId(targetDate);
-  const generatedForDate = templates.map((screening, index) => ({
-    ...screening,
-    id: syntheticScreeningId(screening, dateHash, index),
-    originalScreeningId: screening.originalScreeningId ?? screening.id,
-    date: targetDate,
-  })).filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta));
+    if (hasTargetDate) {
+      screeningsForDate = visibleScreenings.filter((screening) => getScreeningDate(screening, scheduleMeta) === targetDate);
+    } else {
+      const templates = uniqueScreeningTemplates(visibleScreenings.length ? visibleScreenings : publicDemoData.screenings);
+      const dateHash = dateHashForScreeningId(targetDate);
+      screeningsForDate = templates.map((screening, index) => ({
+        ...screening,
+        id: syntheticScreeningId(screening, dateHash, index),
+        originalScreeningId: screening.originalScreeningId ?? screening.id,
+        date: targetDate,
+      })).filter((screening) => !isScreeningOccurrenceDeleted(screening, scheduleMeta));
+    }
+  }
 
-  return [...visibleScreenings, ...generatedForDate];
+  return getCollisionFreeScreeningsForUser(catalog, screeningsForDate, scheduleMeta);
 }
 
 function availableScheduleDates(days = PUBLIC_DAYS_AHEAD) {
@@ -1127,7 +1165,7 @@ function PublicCatalog({ onGoLogin }) {
   }, [data.screenings, data.halls]);
 
   const scheduleDates = useMemo(() => availableScheduleDates(), []);
-  const visibleScreenings = useMemo(() => screeningsCoveringDate(data, filters.date), [data, filters.date]);
+  const visibleScreenings = useMemo(() => screeningsCoveringDate(data, filters.date), [data, filters.date, scheduleMeta]);
 
   const filteredScreenings = useMemo(() => {
     const movieQuery = normalizeSearchText(filters.movie);
@@ -1607,7 +1645,7 @@ function BookingPage({ auth }) {
   }, [data.screenings, data.halls]);
 
   const scheduleDates = useMemo(() => availableScheduleDates(), []);
-  const visibleScreenings = useMemo(() => screeningsCoveringDate(data, filters.date), [data, filters.date]);
+  const visibleScreenings = useMemo(() => screeningsCoveringDate(data, filters.date), [data, filters.date, scheduleMeta]);
 
   const filteredScreenings = useMemo(() => {
     const movieQuery = normalizeSearchText(filters.movie);

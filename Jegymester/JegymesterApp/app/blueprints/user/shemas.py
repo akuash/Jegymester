@@ -44,3 +44,5 @@ class UserLoginResponseSchema(Schema):
     token_type = fields.String()
     expires_in = fields.Integer()
     user = fields.Nested(UserResponseSchema)
+
+

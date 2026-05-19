@@ -83,3 +83,5 @@ class UserService:
             .order_by(User.id)
         ).scalars().all()
         return True, users
+
+

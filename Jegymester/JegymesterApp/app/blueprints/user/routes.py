@@ -12,7 +12,6 @@ from app.security import token_auth
 
 
 @bp.post('/register')
-@bp.post('/registrate')
 @bp.input(UserRegisterRequestSchema, location='json')
 @bp.output(UserResponseSchema, 201)
 def user_register(json_data):
@@ -47,4 +46,6 @@ def get_users():
     if success:
         return response
     raise HTTPError(status_code=400, message=response)
+
+
 
